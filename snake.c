@@ -66,7 +66,7 @@ struct map {
 	void (*enter)(void);
 };
 
-static char ASCII_ARTS[][20] = {
+static char const ASCII_ARTS[][20] = {
 	[T_GROUND] = "  ",
 	[T_HEAD] =
 	B("V "), B("^ "), B(" >"), B("< "),
@@ -99,7 +99,7 @@ static char ASCII_ARTS[][20] = {
 	"Z ",
 };
 
-static char ASCII_BLOCK_ARTS[][20] = {
+static char const ASCII_BLOCK_ARTS[][20] = {
 	[T_GROUND] = "  ",
 	[T_HEAD] =
 #define X "\033[1;7moo\033[m"
@@ -138,7 +138,7 @@ static char ASCII_BLOCK_ARTS[][20] = {
 	"Z ",
 };
 
-static char UNICODE_ARTS[][20] = {
+static char const UNICODE_ARTS[][20] = {
 	[T_GROUND] = "  ",
 	[T_HEAD] =
 	B("ꙭ "), B("ꙭ "), B("ꙭ "), B("ꙭ "),
@@ -171,7 +171,7 @@ static char UNICODE_ARTS[][20] = {
 	"Ｚ",
 };
 
-static char (*ARTS)[20] = UNICODE_ARTS;
+static char const (*ARTS)[20] = UNICODE_ARTS;
 
 static int const SPEED_DELAYS[] = {
 	800,
