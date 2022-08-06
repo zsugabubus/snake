@@ -13,9 +13,9 @@
 static char const USAGE[] =
 "Usage: snake [OPTION]\n"
 "\n"
-"  -s=SPEED      set snake speed (default: 6)\n"
-"  -t=THEME      set display theme\n"
-"  -m=NAME       start playing on map\n"
+"  -s SPEED      set snake speed (default: 6)\n"
+"  -t THEME      set display theme\n"
+"  -m NAME       start playing on map\n"
 "  -M            mouse mode\n"
 "  -h            display this help and exit\n"
 "\n"
@@ -26,7 +26,6 @@ static char const USAGE[] =
 
 #define G(str) "\033[32m" str "\033[m"
 #define B(str) "\033[1;32m" str "\033[m"
-#define OPPOSITE(dir) ((dir) ^ 1)
 
 #define ARRAY_SIZE(x) (int)(sizeof x / sizeof *x)
 
@@ -37,18 +36,18 @@ enum {
 
 enum direction {
 	UP,
+	RIGHT,
 	DOWN,
 	LEFT,
-	RIGHT,
 };
 
-enum entity {
+enum type {
 	T_GROUND,
 	T_HEAD,
 	T_SNAKE = T_HEAD + 4,
 	T_FAT_SNAKE = T_SNAKE + 4 * 4,
-	T_FAT_SNAKE_END = T_FAT_SNAKE + 4 * 4,
-	T_WALL,
+	T_WALL = T_FAT_SNAKE + 4 * 4,
+	T_SNAKE_END = T_WALL,
 	T_HOLE,
 	T_MEAT,
 	T_SNAIL,
@@ -69,17 +68,17 @@ struct map {
 static char const ASCII_ARTS[][20] = {
 	[T_GROUND] = "  ",
 	[T_HEAD] =
-	B("V "), B("^ "), B(" >"), B("< "),
+	B("V "), B("< "), B("^ "), B(" >"),
 	[T_SNAKE] =
-	G("  "), G("| "), G("o "), G("o-"),
-	G("| "), G("  "), G("o "), G("o-"),
-	G("o "), G("o "), G("  "), G("--"),
-	G("o-"), G("o-"), G("--"), G("  "),
+	G("  "), G("o-"), G("| "), G("o "),
+	G("o-"), G("  "), G("o-"), G("--"),
+	G("| "), G("o-"), G("  "), G("o "),
+	G("o "), G("--"), G("o "), G("  "),
 	[T_FAT_SNAKE] =
-	B("  "), B("| "), B("O "), B("O="),
-	B("| "), B("  "), B("O "), B("O="),
-	B("O "), B("O "), B("  "), B("=="),
-	B("O="), B("O="), B("=="), B("  "),
+	B("  "), B("O="), B("| "), B("O "),
+	B("O="), B("  "), B("O="), B("=="),
+	B("| "), B("O="), B("  "), B("O "),
+	B("O "), B("=="), B("O "), B("  "),
 	[T_HOLE] = "\033[1;34m[]\033[m",
 	[T_MEAT] = "++",
 	[T_EGG] = "O ",
@@ -143,15 +142,15 @@ static char const UNICODE_ARTS[][20] = {
 	[T_HEAD] =
 	B("ꙭ "), B("ꙭ "), B("ꙭ "), B("ꙭ "),
 	[T_SNAKE] =
-	G("  "), G("┃ "), G("┛ "), G("┗━"),
-	G("┃ "), G("  "), G("┓ "), G("┏━"),
-	G("┛ "), G("┓ "), G("  "), G("━━"),
-	G("┗━"), G("┏━"), G("━━"), G("  "),
+	G("  "), G("┗━"), G("┃ "), G("┛ "),
+	G("┗━"), G("  "), G("┏━"), G("━━"),
+	G("┃ "), G("┏━"), G("  "), G("┓ "),
+	G("┛ "), G("━━"), G("┓ "), G("  "),
 	[T_FAT_SNAKE] =
-	B("  "), B("║ "), B("╝ "), B("╚═"),
-	B("║ "), B("  "), B("╗ "), B("╔═"),
-	B("╝ "), B("╗ "), B("  "), B("══"),
-	B("╚═"), B("╔═"), B("══"), B("  "),
+	B("  "), B("╚═"), B("║ "), B("╝ "),
+	B("╚═"), B("  "), B("╔═"), B("══"),
+	B("║ "), B("╔═"), B("  "), B("╗ "),
+	B("╝ "), B("══"), B("╗ "), B("  "),
 	[T_HOLE] = "\033[1;34m🞑 \033[m",
 	[T_MEAT] = "🍗",
 	[T_EGG] = "🥚",
@@ -205,6 +204,24 @@ static int partially_damaged;
 static int jungle_damage[20];
 static int num_damages;
 static int old_score, old_timeout;
+
+static enum direction
+opposite(enum direction d)
+{
+	return d ^ 2;
+}
+
+static enum direction
+turn_left(enum direction d)
+{
+	return (d - 1) % 4;
+}
+
+static enum direction
+turn_right(enum direction d)
+{
+	return (d + 1) % 4;
+}
 
 static void
 draw_cell(int pos)
@@ -275,12 +292,11 @@ draw_status(void)
 
 	if (old_timeout != food_timeout || !partially_damaged) {
 		old_timeout = food_timeout;
-		printf("\033[%d;%dH", 1 + H + 1, W - 6);
-		if (old_timeout) {
+		printf("\033[%d;%dH", 1 + H + 1, 1 + (W - 2) * 2);
+		if (old_timeout)
 			draw_number(old_timeout, 10);
-		} else {
+		else
 			printf("    ");
-		}
 	}
 }
 
@@ -301,36 +317,36 @@ move(int *y, int *x, enum direction d)
 }
 
 static void
-plant(int pos, enum entity e)
+plant(int pos, enum type t)
 {
 	partially_damaged &= num_damages < 20;
 	if (partially_damaged)
 		jungle_damage[num_damages++] = pos;
-	jungle[pos] = e;
+	jungle[pos] = t;
 }
 
 static void
-plant_yx(int y, int x, enum entity e)
+plant_yx(int y, int x, enum type t)
 {
-	plant(y * W + x, e);
+	plant(y * W + x, t);
 }
 
 static void
-plant_yxh(int y, int x, int n, enum entity e)
-{
-	for (int i = 0; i < n; ++i)
-		plant_yx(y, x + i, e);
-}
-
-static void
-plant_yxv(int y, int x, int n, enum entity e)
+plant_yxh(int y, int x, int n, enum type t)
 {
 	for (int i = 0; i < n; ++i)
-		plant_yx(y + i, x, e);
+		plant_yx(y, x + i, t);
+}
+
+static void
+plant_yxv(int y, int x, int n, enum type t)
+{
+	for (int i = 0; i < n; ++i)
+		plant_yx(y + i, x, t);
 }
 
 static int
-plant_random(enum entity e)
+plant_random(enum type t)
 {
 	int n = 0;
 	for (int pos = 0; pos < H * W; ++pos)
@@ -341,7 +357,7 @@ plant_random(enum entity e)
 
 	for (int pos = 0;; ++pos) {
 		if (T_GROUND == jungle[pos] && !n--) {
-			plant(pos, e);
+			plant(pos, t);
 			return pos;
 		}
 	}
@@ -352,8 +368,8 @@ static void
 plant_text(int y, int x, char const *str)
 {
 	for (; *str; ++str) {
-		enum entity e = ' ' == *str ? T_GROUND : T_ALPHABET + (*str - 'A');
-		plant_yx(y, x, e);
+		enum type t = ' ' == *str ? T_GROUND : T_ALPHABET + (*str - 'A');
+		plant_yx(y, x, t);
 		move(&y, &x, RIGHT);
 	}
 }
@@ -364,43 +380,52 @@ plant_ctext(int y, char const *str)
 	plant_text(y, (W - strlen(str)) / 2, str);
 }
 
+static int
+have(enum type t)
+{
+	for (int i = 0; i < H * W; ++i)
+		if (t == (enum type)jungle[i])
+			return 1;
+	return 0;
+}
+
 static void
 plant_food(void)
 {
 	int p = rand() % 1024;
-	if (p < 20) {
+	if (p < 50 && !have(T_HOLE)) {
 		plant_random(T_HOLE);
 	} else if (p < 300 && yfood < 0) {
 		int p = rand() % 32;
-		enum entity e;
+		enum type t;
 		if (p < 10)
-			e = T_SNAIL;
+			t = T_SNAIL;
 		else if (p < 20)
-			e = T_BEETLE;
+			t = T_BEETLE;
 		else if (p < 30)
-			e = T_ANT;
+			t = T_ANT;
 		else
-			e = T_PRESENT;
-		int pos = plant_random(e);
+			t = T_PRESENT;
+		int pos = plant_random(t);
 		if (pos < 0)
 			return;
 		yfood = pos / W;
 		xfood = pos % W;
-		food_dir = T_SNAIL == e
+		food_dir = T_SNAIL == t
 			? (rand() % 2 ? LEFT : RIGHT)
 			: rand() % 4;
 		if (rand() % 16 < 15)
 			food_timeout = 30;
 	} else {
 		int p = rand() % 32;
-		enum entity e;
+		enum type t;
 		if (p < 17)
-			e = T_EGG;
+			t = T_EGG;
 		else if (p < 30)
-			e = T_SNAIL;
+			t = T_SNAIL;
 		else
-			e = T_BEETLE;
-		plant_random(e);
+			t = T_BEETLE;
+		plant_random(t);
 	}
 }
 
@@ -426,21 +451,21 @@ move_food(void)
 
 	int y = yfood, x = xfood;
 	move(&y, &x, food_dir);
-	enum entity e = jungle[y * W + x];
-	if (T_GROUND != e && !(T_HEAD <= e && e < T_HEAD + 4))
-		food_dir = OPPOSITE(food_dir);
+	enum type t = jungle[y * W + x];
+	if (T_GROUND != t && !(T_HEAD <= t && t < T_HEAD + 4))
+		food_dir = opposite(food_dir);
 
 	y = yfood, x = xfood;
 	move(&y, &x, food_dir);
 	if (T_GROUND != jungle[y * W + x])
 		return;
-	e = jungle[yfood * W + xfood];
+	t = jungle[yfood * W + xfood];
 	plant_yx(yfood, xfood, T_GROUND);
-	plant_yx((yfood = y), (xfood = x), e);
+	plant_yx((yfood = y), (xfood = x), t);
 }
 
 static int
-all_food_eaten(void)
+have_special_food(void)
 {
 	for (int i = 0; i < H * W; ++i)
 		switch (jungle[i]) {
@@ -449,16 +474,16 @@ all_food_eaten(void)
 		case T_EGG:
 		case T_ANT:
 		case T_PRESENT:
-			return 0;
+			return 1;
 		}
 
-	return 1;
+	return 0;
 }
 
 static int
 move_snake(void)
 {
-	if (next_snake_dir != OPPOSITE(snake_dir))
+	if (next_snake_dir != opposite(snake_dir))
 		snake_dir = next_snake_dir;
 	next_snake_dir = snake_dir;
 
@@ -466,8 +491,8 @@ move_snake(void)
 		if (snake_growth < 0)
 			++snake_growth;
 
-		enum entity e = jungle[ytail * W + xtail];
-		enum direction tail_dir = e < T_SNAKE ? snake_dir : (e - T_SNAKE) % 4;
+		enum type t = jungle[ytail * W + xtail];
+		enum direction tail_dir = t < T_SNAKE ? snake_dir : (t - T_SNAKE) % 4;
 		/* if (!(ytail == yhead && xtail == xhead)) */
 			plant_yx(ytail, xtail, T_GROUND);
 		move(&ytail, &xtail, tail_dir);
@@ -482,32 +507,27 @@ move_snake(void)
 			--snake_growth;
 
 		int prev_pos = yhead * W + xhead;
-
 		move(&yhead, &xhead, snake_dir);
 		int new_pos = yhead * W + xhead;
-		enum entity new = jungle[new_pos];
-		if (T_HEAD <= new && new <= T_FAT_SNAKE_END) {
-			goto hit;
+		int bug = new_pos == yfood * W + xfood;
+		if (bug)
+			yfood = -1;
+		enum type new = jungle[new_pos];
+		if (new == T_WALL || (T_HEAD <= new && new < T_SNAKE_END)) {
+			plant(new_pos, T_HIT);
+			return 0;
 		} else switch (new) {
 		case T_HEAD:
 		case T_SNAKE:
 		case T_FAT_SNAKE:
-		case T_FAT_SNAKE_END:
-			/* Already handled. */
-			break;
-
-		case T_HIT:
-			/* Unreachable. */
+		case T_WALL:
+			/* Handled above. */
 			break;
 
 		case T_GROUND:
+		case T_ALPHABET:
 			/* Ok. Move along. */
 			break;
-
-		case T_WALL:
-		hit:
-			plant(new_pos, T_HIT);
-			return 0;
 
 		case T_HOLE:
 			snake_growth = -9999;
@@ -519,7 +539,7 @@ move_snake(void)
 			plant_random(T_MEAT);
 			/* Otherwise player would not be motivated to
 			 * pick up foods immediately. */
-			if (all_food_eaten())
+			if (!have_special_food())
 				plant_foodn(rand() % 4);
 			break;
 
@@ -527,18 +547,11 @@ move_snake(void)
 		case T_BEETLE:
 		case T_EGG:
 		case T_ANT:
-		{
-			int tmp = speed + rand() % (speed * speed);
-			tmp <<= (new_pos == yfood * W + xfood);
-			score += tmp;
-		}
+			score += (speed + rand() % (speed * speed)) << bug;
 			snake_growth += 1;
 			break;
 
 		case T_PRESENT:
-			/* A bit of hack to allow present generate
-			 * moving food. */
-			yfood = -1;
 			plant_foodn(2 + rand() % 4);
 			break;
 
@@ -546,20 +559,18 @@ move_snake(void)
 			star_bonus += 10;
 			break;
 
-		case T_ALPHABET:
-			/* Nothing. */
+		case T_HIT:
+			/* Unreachable. */
 			break;
 		}
 		if (T_HOLE != new)
 			plant(new_pos, T_HEAD + snake_dir);
-		enum entity old_into = T_GROUND;
-		if (new_pos != ytail * W + xtail)
-			old_into = (snake_growth <= 0 ? T_SNAKE : T_FAT_SNAKE) +
-				OPPOSITE(jungle[prev_pos] - T_HEAD) * 4 + snake_dir;
+		enum type old_into = T_GROUND;
+		if (new_pos != ytail * W + xtail) {
+			enum type base = snake_growth <= 0 ? T_SNAKE : T_FAT_SNAKE;
+			old_into = base + opposite(jungle[prev_pos] - T_HEAD) * 4 + snake_dir;
+		}
 		plant(prev_pos, old_into);
-
-		if (new_pos == yfood * W + xfood)
-			yfood = -1;
 	}
 	return 1;
 }
@@ -567,10 +578,7 @@ move_snake(void)
 static int
 move_world(void)
 {
-	if (!move_snake())
-		return -1;
-	move_food();
-	return 0;
+	return move_snake() && (move_food(), 1);
 }
 
 static int
@@ -590,7 +598,7 @@ run(void)
 
 	goto first_draw;
 	for (;;) {
-		enum entity head = jungle[yhead * W + xhead];
+		enum type head = jungle[yhead * W + xhead];
 		if (T_GROUND == head)
 			break;
 		int in_hole = T_HOLE == head;
@@ -622,7 +630,7 @@ run(void)
 			continue;
 
 		if (!rc) {
-			if (move_world() < 0)
+			if (!move_world())
 				return -1;
 		first_draw:
 			draw();
@@ -639,22 +647,12 @@ run(void)
 
 		if (mouse) switch (key) {
 		case 'A':
-			switch (snake_dir) {
-			case UP: next_snake_dir = RIGHT; break;
-			case RIGHT: next_snake_dir = DOWN; break;
-			case DOWN: next_snake_dir = LEFT; break;
-			case LEFT: next_snake_dir = UP; break;
-			}
+			next_snake_dir = turn_right(snake_dir);
 			paused = 0;
 			break;
 
 		case 'B':
-			switch (snake_dir) {
-			case UP: next_snake_dir = LEFT; break;
-			case RIGHT: next_snake_dir = UP; break;
-			case DOWN: next_snake_dir = RIGHT; break;
-			case LEFT: next_snake_dir = DOWN; break;
-			}
+			next_snake_dir = turn_left(snake_dir);
 			paused = 0;
 			break;
 
@@ -700,14 +698,6 @@ run(void)
 		case '6':
 			next_snake_dir = RIGHT;
 			paused = 0;
-			break;
-
-		case 'M':
-			if (1000 < score) {
-				score -= 1000;
-				plant_random(T_HOLE);
-				draw();
-			}
 			break;
 
 		case ' ':
@@ -1121,69 +1111,68 @@ main(int argc, char *argv[])
 
 	int map = -1;
 
-	for (int opt; -1 != (opt = getopt(argc, argv, "hm:s:t:M"));)
-		switch (opt) {
-		case 'h':
-			printf(USAGE);
+	for (int opt; 0 < (opt = getopt(argc, argv, "hm:s:t:M"));) switch (opt) {
+	case 'h':
+		printf(USAGE);
+		return EXIT_SUCCESS;
+
+	case 'm':
+		if (!strcmp(optarg, "help")) {
+			print_m_help(stdout);
 			return EXIT_SUCCESS;
-
-		case 'm':
-			if (!strcmp(optarg, "help")) {
-				print_m_help(stdout);
-				return EXIT_SUCCESS;
-			}
-			for (int i = 0; i < ARRAY_SIZE(MAPS); ++i)
-				if (!strcmp(optarg, MAPS[i].name))
-					map = i;
-			if (map < 0) {
-				fprintf(stderr, USAGE);
-				print_m_help(stderr);
-				return EXIT_FAILURE;
-			}
-			break;
-
-		case 'M':
-			mouse = 1;
-			break;
-
-		case 's':
-			if (!strcmp(optarg, "help")) {
-				print_s_help(stdout);
-				return EXIT_SUCCESS;
-			}
-			speed = atoi(optarg);
-			if (!(1 <= speed && speed <= 9)) {
-				fprintf(stderr, USAGE);
-				print_s_help(stderr);
-				return EXIT_FAILURE;
-			}
-			break;
-
-		case 't':
-			if (!strcmp(optarg, "help")) {
-				print_t_help(stdout);
-				return EXIT_SUCCESS;
-			}
-			if (!strcmp(optarg, "ascii")) {
-				ARTS = ASCII_ARTS;
-			} else if (!strcmp(optarg, "ascii-block")) {
-				ARTS = ASCII_BLOCK_ARTS;
-			} else if (!strcmp(optarg, "unicode")) {
-				ARTS = UNICODE_ARTS;
-			} else {
-				fprintf(stderr, USAGE);
-				print_t_help(stderr);
-				return EXIT_FAILURE;
-			}
-			break;
-
-		case '?':
-			fprintf(stderr, USAGE);
-			return EXIT_FAILURE;
-
-		default:
-			abort();
 		}
+		for (int i = 0; i < ARRAY_SIZE(MAPS); ++i)
+			if (!strcmp(optarg, MAPS[i].name))
+				map = i;
+		if (map < 0) {
+			fprintf(stderr, USAGE);
+			print_m_help(stderr);
+			return EXIT_FAILURE;
+		}
+		break;
+
+	case 'M':
+		mouse = 1;
+		break;
+
+	case 's':
+		if (!strcmp(optarg, "help")) {
+			print_s_help(stdout);
+			return EXIT_SUCCESS;
+		}
+		speed = atoi(optarg);
+		if (!(1 <= speed && speed <= 9)) {
+			fprintf(stderr, USAGE);
+			print_s_help(stderr);
+			return EXIT_FAILURE;
+		}
+		break;
+
+	case 't':
+		if (!strcmp(optarg, "help")) {
+			print_t_help(stdout);
+			return EXIT_SUCCESS;
+		}
+		if (!strcmp(optarg, "ascii")) {
+			ARTS = ASCII_ARTS;
+		} else if (!strcmp(optarg, "ascii-block")) {
+			ARTS = ASCII_BLOCK_ARTS;
+		} else if (!strcmp(optarg, "unicode")) {
+			ARTS = UNICODE_ARTS;
+		} else {
+			fprintf(stderr, USAGE);
+			print_t_help(stderr);
+			return EXIT_FAILURE;
+		}
+		break;
+
+	case '?':
+		fprintf(stderr, USAGE);
+		return EXIT_FAILURE;
+
+	default:
+		abort();
+	}
 
 	save_term();
 	prepare_term();
