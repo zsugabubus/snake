@@ -31,8 +31,8 @@ static char const USAGE[] =
 #define ARRAY_SIZE(x) (int)(sizeof x / sizeof *x)
 
 enum {
-	W = 22,
-	H = 20,
+	W = 21,
+	H = 23,
 };
 
 enum direction {
@@ -763,37 +763,40 @@ enter_map_around(void)
 static void
 enter_map_corners(void)
 {
+	int Py = 7;
+
 	vacuum_jungle();
 	/* Going clockwise starting from top left corner. */
-	plant_yx(1, 0, T_WALL);
-	plant_yx(0, 0, T_WALL);
+	plant_yxv(0, 0, 3, T_WALL);
 	plant_yx(0, 1, T_WALL);
 	plant_yx(0, W - 2, T_WALL);
-	plant_yx(0, W - 1, T_WALL);
-	plant_yx(1, W - 1, T_WALL);
-	plant_yx(H - 2, W - 1, T_WALL);
-	plant_yx(H - 1, W - 1, T_WALL);
+	plant_yxv(0, W - 1, 3, T_WALL);
+	plant_yxv(H - 3, W - 1, 3, T_WALL);
 	plant_yx(H - 1, W - 2, T_WALL);
 	plant_yx(H - 1, 1, T_WALL);
-	plant_yx(H - 1, 0, T_WALL);
-	plant_yx(H - 2, 0, T_WALL);
+	plant_yxv(H - 3, 0, 3, T_WALL);
 	/* Bars. */
-	plant_yxh(5, 5, W - 2 * 5, T_WALL);
-	plant_yxh(H - 1 - 5, 5, W - 2 * 5, T_WALL);
+	int y = (H - Py) / 2 - 1, x = W / 4, xn = W - 2 * x;
+	plant_yxh(y, x, xn, T_WALL);
+	plant_yxh(H - 1 - y, x, xn, T_WALL);
 	plant_snake(H / 2 + rand() % 4 - 2, W / 2, rand() % 2 ? LEFT : RIGHT);
 	plant_random(T_MEAT);
 	marathon();
 }
 
 static void
-enter_map_spiral(void)
+enter_map_whirpool(void)
 {
+	int Pc = 1;
+	int Px = 3;
+
 	vacuum_jungle();
-	int yoffset = 7, xoffset = 14, length = 9;
-	plant_yxh(yoffset, 0, length, T_WALL);
-	plant_yxh(H - 1 - yoffset, W - length, length, T_WALL);
-	plant_yxv(0, xoffset, length, T_WALL);
-	plant_yxv(H - length, W - 1 - xoffset, length, T_WALL);
+	int yn = (H - Pc) / 2, xn = (W - Pc) / 2;
+	int yoff = yn - Px - 1, xoff = xn + Px + 1;
+	plant_yxh(yoff, 0, xn, T_WALL);
+	plant_yxh(H - 1 - yoff, W - xn, xn, T_WALL);
+	plant_yxv(0, xoff, yn, T_WALL);
+	plant_yxv(H - yn, W - 1 - xoff, yn, T_WALL);
 	plant_snake(H / 2, W / 2, rand() % 4);
 	plant_random(T_MEAT);
 	marathon();
@@ -803,11 +806,10 @@ static void
 enter_map_cross(void)
 {
 	vacuum_jungle();
-	int length = 11;
-	plant_yxh(H / 2, W / 2 - length / 2, length, T_WALL);
-	plant_yxv(H / 2 - length / 2, W / 2, length, T_WALL);
-	int y = 2 + (rand() % 2 ? H - 4 : 0);
-	int x = 2 + (rand() % 2 ? W - 4 : 0);
+	plant_yxh(H / 2, W / 2 - W / 4, W / 2 | 1, T_WALL);
+	plant_yxv(H / 2 - H / 4, W / 2, H / 2 | 1, T_WALL);
+	int y = rand() % 2 ? H - 1 - H / 8 : H / 8;
+	int x = rand() % 2 ? W - 1 - W / 8 : W / 8;
 	plant_snake(y, x, rand() % 4);
 	plant_random(T_MEAT);
 	marathon();
@@ -834,7 +836,7 @@ static struct map const MAPS[] = {
 	{ "AROUND", enter_map_around },
 	{ "CORNERS", enter_map_corners },
 	{ "CROSS", enter_map_cross },
-	{ "SPIRAL", enter_map_spiral },
+	{ "WHIRPOOL", enter_map_whirpool },
 	{ "FOUR", enter_map_four },
 };
 
@@ -862,21 +864,23 @@ enter_speed_menu(void)
 	plant_text(3, 0, "SET");
 	plant_text(3, W - 6, "SLOWER");
 	for (int i = 1; i <= 9; ++i) {
+		plant_yxh(3 + i, (W - 9) / 2, 9 - i + 1, T_STAR);
 		plant_yx(3 + i, 0, T_HOLE);
 		plant_yx(3 + i, W - i, i == 9 ? T_WALL : T_HOLE);
-		plant_yxh(3 + i, 6, 9 - i + 1, T_STAR);
 	}
 	plant_snake(4 + (9 - speed), 1, RIGHT);
-	plant_yx(15, 11, T_EGG);
-	plant_yxv(15, 12, 4, T_WALL);
-	plant_yx(16, 11, T_WALL);
-	plant_yx(16, 13, T_SNAIL);
-	plant_yx(17, 11, T_BEETLE);
-	plant_yxh(17, 12, 3, T_WALL);
-	plant_yx(17, 15, T_EGG);
-	plant_text(17, 1, "BACK");
-	plant_yxh(18, 1, 4, T_HOLE);
-	plant_yx(18, 0, T_WALL);
+	int x = W - 9;
+	plant_yx(15, x - 1, T_EGG);
+	plant_yxv(15, x, 4, T_WALL);
+	plant_yx(16, x - 1, T_WALL);
+	plant_yx(16, x + 1, T_SNAIL);
+	plant_yx(17, x - 1, T_BEETLE);
+	plant_yxh(17, x, 3, T_WALL);
+	plant_yx(17, x + 3, T_EGG);
+	plant_text(15, 1, "BACK");
+	plant_yxh(16, 1, 4, T_HOLE);
+	plant_yx(16, 0, T_WALL);
+	plant_random(T_MEAT);
 
 	int rc = run();
 	if (18 == rc / W) {
@@ -942,57 +946,6 @@ enter_maps_menu(int sel, int autoplay)
 }
 
 static void
-enter_tour_menu(void)
-{
-	vacuum_jungle();
-	plant_ctext(1, "FOODS");
-	plant_ctext(4, "EAT TO EARN SCORE");
-	plant_ctext(7, "ALWAYS EAT THIS");
-	plant_yx(9, 10, T_MEAT);
-	plant_ctext(12, "EAT THESE");
-	plant_ctext(13, "FOR HIGHER SCORE");
-	plant_yx(15, 8, T_EGG);
-	plant_yx(15, 10, T_SNAIL);
-	plant_yx(15, 12, T_BEETLE);
-	plant_yx(15, 14, T_ANT);
-	plant_button(18, 8, "NEXT");
-	plant_snake(18, 16, RIGHT);
-	run();
-
-	vacuum_jungle();
-	plant_ctext(1, "NON FOODS");
-	plant_ctext(4, "WHAT YOU CANNOT EAT");
-	plant_ctext(5, "WILL EAT YOU");
-	plant_yxh(7, 2, W - 4, T_WALL);
-	plant_yxh(7 + 8, 2, W - 4, T_WALL);
-	plant_yxv(7, 2, 9, T_WALL);
-	plant_yxv(7, W - 3, 9, T_WALL);
-	plant_snake(11, 10, LEFT);
-	paused = 1;
-	run();
-	plant_ctext(17, "PRESS SPACE TO");
-	plant_ctext(18, "CONTINUE");
-	wait_user();
-
-	vacuum_jungle();
-	plant_ctext(1, "HOLES");
-	plant_ctext(4, "TAKE YOU ELSEWHERE");
-	plant_snake(8, 6, RIGHT);
-	plant_yx(8, 13, T_HOLE);
-	run();
-
-	vacuum_jungle();
-	plant_yxh(7, 6, 9, T_STAR);
-	plant_yx(8, 6, T_STAR);
-	plant_text(8, 7, "THE END");
-	plant_yx(8, 14, T_STAR);
-	plant_yxh(9, 6, 9, T_STAR);
-	plant_snake(15, 15, LEFT);
-	plant_button(15, 6, "BYE");
-	run();
-}
-
-static void
 enter_about_menu(void)
 {
 	vacuum_jungle();
@@ -1026,12 +979,14 @@ enter_welcome_menu(void)
 		plant_ctext(7, "L D    RIGHT");
 		plant_ctext(8, "SPACE  PAUSE");
 	}
-	plant_button(11, 3, "PLAY");
-	plant_snake(11, 17, LEFT);
-	plant_button(13, 5, "MAPS");
-	plant_button(15, 7, "SPEED");
-	plant_button(17, 9, "TOUR");
-	plant_button(19, 11, "ABOUT");
+
+	int xn = 14;
+	int x = (W - xn) / 2;
+	plant_button(11, x, "PLAY");
+	plant_snake(11, W - 1 - x, LEFT);
+	plant_button(13, x + 2, "MAPS");
+	plant_button(15, x + 4, "SPEED");
+	plant_button(17, x + 6, "ABOUT");
 
 	time_t now = time(NULL);
 	struct tm const *tm = localtime(&now);
@@ -1060,10 +1015,6 @@ enter_welcome_menu(void)
 
 	case 15:
 		enter_speed_menu();
-		break;
-
-	case 17:
-		enter_tour_menu();
 		break;
 
 	case 19:
