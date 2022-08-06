@@ -152,7 +152,7 @@ static char const UNICODE_ARTS[][20] = {
 	B("║ "), B("╔═"), B("  "), B("╗ "),
 	B("╝ "), B("══"), B("╗ "), B("  "),
 	[T_HOLE] = "\033[1;34m🞑 \033[m",
-	[T_MEAT] = "🍗",
+	[T_MEAT] = "🍎",
 	[T_EGG] = "🥚",
 	[T_SNAIL] = "🐌",
 	[T_BEETLE] = "🐞",
