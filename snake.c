@@ -821,6 +821,36 @@ enter_map_four(void)
 	marathon();
 }
 
+static void
+enter_map_slit(void)
+{
+	vacuum_jungle();
+	plant_yxh(0, 0, W, T_WALL);
+	plant_yxv(0, 0, H, T_WALL);
+	plant_yxv(0, W - 1, H, T_WALL);
+	plant_yxh(H - 1, 0, W, T_WALL);
+	enum direction d;
+	int y, x;
+	if (rand() % 2) {
+		plant_yxv(0, W / 2, H, T_WALL);
+		plant_yx(H / 2 - 1, W / 2, T_GROUND);
+		plant_yx(H / 2 + 1, W / 2, T_GROUND);
+		d = rand() % 2 ? LEFT : RIGHT;
+		y = H / 2 + (rand() % 2 ? 1 : -1);
+		x = W / 4 + (RIGHT == d ? 0 : W / 2);
+	} else {
+		plant_yxh(H / 2, 0, W, T_WALL);
+		plant_yx(H / 2, W / 2 - 1, T_GROUND);
+		plant_yx(H / 2, W / 2 + 1, T_GROUND);
+		d = rand() % 2 ? UP : DOWN;
+		y = H / 4 + (DOWN == d ? 0 : H / 2);
+		x = W / 2 + (rand() % 2 ? 1 : -1);
+	}
+	plant_snake(y, x, d);
+	plant_random(T_MEAT);
+	marathon();
+}
+
 static struct map const MAPS[] = {
 	{ "CLASSIC", enter_map_classic },
 	{ "AROUND", enter_map_around },
@@ -828,6 +858,7 @@ static struct map const MAPS[] = {
 	{ "CROSS", enter_map_cross },
 	{ "WHIRPOOL", enter_map_whirpool },
 	{ "FOUR", enter_map_four },
+	{ "SLIT", enter_map_slit },
 };
 
 static void
