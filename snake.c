@@ -1038,7 +1038,7 @@ enter_welcome_menu(void)
 		enter_speed_menu();
 		break;
 
-	case 19:
+	case 17:
 		enter_about_menu();
 		break;
 
