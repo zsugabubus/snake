@@ -32,8 +32,10 @@ static char const USAGE[] =
 #define ARRAY_SIZE(x) (int)(sizeof x / sizeof *x)
 
 enum {
-	W = 21,
-	H = 23,
+	/* W = 21,
+	H = 23, */
+	W = 5,
+	H = 6,
 };
 
 enum direction {
@@ -65,7 +67,7 @@ enum type {
 };
 
 struct map {
-	char name[W];
+	char name[10];
 	void (*enter)(void);
 };
 
@@ -297,7 +299,7 @@ draw_status(void)
 
 	if (old_timeout != food_timeout || !partially_damaged) {
 		old_timeout = food_timeout;
-		printf("\033[%d;%dH", 1 + H + 1, 1 + (W - 2) * 2);
+		printf("\033[%d;%dH", 1 + H + 1, 1 + (W / 2 - 1) * 2);
 		if (old_timeout)
 			draw_number(old_timeout, 10);
 		else
@@ -618,11 +620,6 @@ steer(void)
 		if (T_WALL == jungle[i])
 			dists[i] = INT_MIN;
 
-	/* for (int y = ytail, x = xtail, n = 0; y != yhead && x != xhead;) {
-		dists[y * W + x] = --n;
-		move(&y, &x, (jungle[y * W + x] - T_SNAKE) % 4);
-	} */
-
 	dists[yhead * W + xhead] = 0;
 	for (int i = yhead * W + xhead;;) {
 		for (enum direction d = 0; d < 4; ++d) {
@@ -653,7 +650,7 @@ steer(void)
 	for (int i = 0; i < W * H; ++i)
 		dirs[i] = i;
 
-	int dest = 4 * W + 7;
+	int dest = 0 * W + 3;
 	for (int i = dest;;) {
 		if (!dists[i]) {
 			dirs[i] = -1;
@@ -670,11 +667,12 @@ steer(void)
 		}
 	}
 
+#if 1
 	for (int i = 0; i < H * W; ++i)
 		if (dirs[i] == i)
 			dists[i] = -1;
 
-	for (;;) {
+	for (int iter = 0;; ++iter) {
 		int z = 0;
 		for (int i = 0; i < H * W; ++i) {
 			/* Not reachable. */
@@ -688,6 +686,10 @@ steer(void)
 				if (dist <= dists[y * W + x])
 					continue;
 
+				/* Nothing can dependent on dest. It is the final step. */
+				if (i == dest || jungle[i] == T_WALL || jungle[y * W + x] == T_WALL)
+					continue;
+
 				for (int j = i; !((j = dirs[j]) == y * W + x);)
 					if (j < 0)
 						goto ok;
@@ -699,24 +701,12 @@ steer(void)
 				dirs[y * W + x] = i;
 			}
 		}
+
 		if (!z)
 			break;
 	}
 
-	int m = 0;
-	int mi;
-	for (int i = 0; i < H * W; ++i)
-		if (dists[i] > m) {
-			m = dists[i];
-			mi = i;
-		}
-
-	int kz = 0;
-	while (dists[mi]) {
-		assert(dists[dirs[mi]] + 1 == dists[mi]);
-		mi = dirs[mi];
-		++kz;
-	}
+#endif
 
 	fputc('\n', stdout);
 	for (int y = 0; y < H; ++y) {
@@ -747,7 +737,63 @@ steer(void)
 	}
 	fflush(stdout);
 
-	__asm__("int3");
+
+#if 1
+	for (int iter = 0;; ++iter) {
+		int z = 0;
+		for (int i = 0; i < H * W; ++i) {
+			/* Not reachable. */
+			if (dists[i] < 0)
+				continue;
+
+			for (enum direction d = 0; d < 4; ++d) {
+				int y = i / W, x = i % W;
+				move(&y, &x, d);
+				int dist = dists[i] + 1;
+				if (dist <= dists[y * W + x]) {
+					if (y * W + x == dest)
+						continue;
+
+					int other = y * W + x;
+					int this = i;
+					int otherlen = 0;
+					int thislen = 0;
+					for (;;) {
+						if (dists[other] > dists[this]) {
+							other = dirs[other];
+							++otherlen;
+						} else if (dists[other] < dists[this]) {
+							this = dirs[this];
+							++thislen;
+						} else if (this == other) {
+							fprintf(stderr, "%d, %d\n", thislen, otherlen);
+							if (thislen < otherlen) {
+								z = 1;
+								dists[i] = dists[y * W + x] + 1;
+								dirs[i] = y * W + x;
+							}
+							break;
+						} else {
+							this = dirs[this];
+							other = dirs[other];
+						}
+						/* Independent. */
+						if (this < 0 || this == dirs[this])
+							break;
+						if (other < 0 || other == dirs[other])
+							break;
+					}
+					continue;
+				}
+			}
+		}
+
+		if (!z)
+			break;
+	}
+#endif
+
+	exit(1);
 	for (int i = 0; i < H * W; ++i) {
 		switch (jungle[i]) {
 
@@ -1175,6 +1221,13 @@ enter_about_menu(void)
 static void
 enter_welcome_menu(void)
 {
+	vacuum_jungle();
+	plant_snake(0, 4, LEFT);
+	plant_yxv(1, 2, 4, T_WALL);
+	plant_yxv(1, 4, 4, T_WALL);
+	run();
+	exit(2);
+
 	for (;;) {
 		vacuum_jungle();
 		plant_ctext(1, "SNAKE");
@@ -1260,7 +1313,7 @@ prepare_term(void)
 	/* Hide cursor (DECTCEM). */
 	fputs("\033[?25l", stdout);
 	/* Use alt screen. */
-	fputs("\033[?1049h", stdout);
+	/* fputs("\033[?1049h", stdout); */
 	fflush(stdout);
 }
 
@@ -1311,7 +1364,7 @@ main(int argc, char *argv[])
 	setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
 	sigset_t sigmask;
 	sigfillset(&sigmask);
-	pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
+	/* pthread_sigmask(SIG_SETMASK, &sigmask, NULL); */
 	signal(SIGINT, handle_interrupt);
 	signal(SIGTERM, handle_interrupt);
 	signal(SIGQUIT, handle_interrupt);
