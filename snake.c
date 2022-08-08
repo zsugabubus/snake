@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 
+#include <assert.h>
 #include <getopt.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -49,13 +51,15 @@ enum type {
 	T_WALL = T_FAT_SNAKE + 4 * 4,
 	T_SNAKE_END = T_WALL,
 	T_HOLE,
-	T_MEAT,
+	T_APPLE,
 	T_SNAIL,
 	T_EGG,
 	T_STAR,
 	T_ANT,
 	T_BEETLE,
 	T_PRESENT,
+	T_FIRST_SFOOD = T_APPLE,
+	T_LAST_SFOOD = T_PRESENT,
 	T_HIT,
 	T_ALPHABET,
 };
@@ -80,7 +84,7 @@ static char const ASCII_ARTS[][20] = {
 	B("| "), B("O="), B("  "), B("O "),
 	B("O "), B("=="), B("O "), B("  "),
 	[T_HOLE] = "\033[1;34m[]\033[m",
-	[T_MEAT] = "++",
+	[T_APPLE] = "++",
 	[T_EGG] = "O ",
 	[T_SNAIL] = "@/",
 	[T_BEETLE] = "MM",
@@ -119,7 +123,7 @@ static char const ASCII_BLOCK_ARTS[][20] = {
 	X, X, X, X,
 #undef X
 	[T_HOLE] = "\033[1;7;34m[]\033[m",
-	[T_MEAT] = "\033[1;7;31m++\033[m",
+	[T_APPLE] = "\033[1;7;31m++\033[m",
 	[T_EGG] = "\033[7;31mO \033[m",
 	[T_SNAIL] = "\033[7;31m@/\033[m",
 	[T_BEETLE] = "\033[7;31mMM\033[m",
@@ -152,7 +156,7 @@ static char const UNICODE_ARTS[][20] = {
 	B("║ "), B("╔═"), B("  "), B("╗ "),
 	B("╝ "), B("══"), B("╗ "), B("  "),
 	[T_HOLE] = "\033[1;34m🞑 \033[m",
-	[T_MEAT] = "🍎",
+	[T_APPLE] = "🍎",
 	[T_EGG] = "🥚",
 	[T_SNAIL] = "🐌",
 	[T_BEETLE] = "🐞",
@@ -198,6 +202,7 @@ static int mushroom_bonus;
 static int star_bonus;
 static int paused;
 static int mouse;
+static int computer;
 static struct termios saved_termios;
 
 static int partially_damaged;
@@ -465,18 +470,11 @@ move_food(void)
 }
 
 static int
-have_special_food(void)
+any_special_food(void)
 {
 	for (int i = 0; i < H * W; ++i)
-		switch (jungle[i]) {
-		case T_SNAIL:
-		case T_BEETLE:
-		case T_EGG:
-		case T_ANT:
-		case T_PRESENT:
+		if (T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD)
 			return 1;
-		}
-
 	return 0;
 }
 
@@ -513,6 +511,7 @@ move_snake(void)
 		if (bug)
 			yfood = -1;
 		enum type new = jungle[new_pos];
+	again:
 		if (new == T_WALL || (T_HEAD <= new && new < T_SNAKE_END)) {
 			plant(new_pos, T_HIT);
 			return 0;
@@ -533,13 +532,17 @@ move_snake(void)
 			snake_growth = -9999;
 			break;
 
-		case T_MEAT:
+		case T_APPLE:
 			snake_growth += 1;
 			score += speed;
-			plant_random(T_MEAT);
+			if (plant_random(T_APPLE) < 0) {
+				new = T_HOLE;
+				goto again;
+			}
+
 			/* Otherwise player would not be motivated to
 			 * pick up foods immediately. */
-			if (!have_special_food())
+			if (!any_special_food())
 				plant_foodn(rand() % 4);
 			break;
 
@@ -581,7 +584,180 @@ move_world(void)
 	return move_snake() && (move_food(), 1);
 }
 
-static int
+/*
+ * (1) Oppenent player is closer to all available cells available by us (we can get enclosed).
+ *     => Go towards cell (1) farther from other player, (2) closest to us.
+ *
+ * (2) Find shortest path to (1) bug, (2) food, (3) apple.
+ *     => Bug: simulate next 30 movements (i-th simulation == i distance far).
+ *              ignore tail <-i in i-th round of simulation
+ *
+ *     !! BE CAREFUL WITH OTHER FOODS IN OUR WAY.
+ *     .. Do not pick up food
+ *     .. T.
+ *     .. FH
+ *     => NO: Check shortest path from our destination (bug/food/apple) to i-th
+ *        tail whether we can bite it.
+ *     => NO: Check longest path from our destination to i..0-th tail.
+ *     => Step towards longest path form our current point to -i-th tail
+ *        reachable by one of the shortest path.
+ *        => REPEAT with i - 1.
+ */
+static void
+steer(void)
+{
+	int next[H * W];
+	for (int i = 0; i < H * W; ++i)
+		next[i] = -1;
+
+	int dists[H * W];
+	for (int i = 0; i < H * W; ++i)
+		dists[i] = INT_MAX;
+
+	for (int i = 0; i < H * W; ++i)
+		if (T_WALL == jungle[i])
+			dists[i] = INT_MIN;
+
+	/* for (int y = ytail, x = xtail, n = 0; y != yhead && x != xhead;) {
+		dists[y * W + x] = --n;
+		move(&y, &x, (jungle[y * W + x] - T_SNAKE) % 4);
+	} */
+
+	dists[yhead * W + xhead] = 0;
+	for (int i = yhead * W + xhead;;) {
+		for (enum direction d = 0; d < 4; ++d) {
+			int y = i / W, x = i % W;
+			move(&y, &x, d);
+			int dist = dists[i] + 1;
+			if (dists[y * W + x] <= dist)
+				continue;
+
+			if (!(T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END)) {
+				if (next[y * W + x] < 0) {
+					next[y * W + x] = next[i];
+					next[i] = y * W + x;
+				}
+			}
+
+			dists[y * W + x] = dist;
+		}
+
+		int oldi = i;
+		i = next[i];
+		next[oldi] = -1;
+		if (i < 0)
+			break;
+	}
+
+	int dirs[H * W];
+	for (int i = 0; i < W * H; ++i)
+		dirs[i] = i;
+
+	int dest = 4 * W + 7;
+	for (int i = dest;;) {
+		if (!dists[i]) {
+			dirs[i] = -1;
+			break;
+		}
+		for (enum direction d = 0; d < 4; ++d) {
+			int y = i / W, x = i % W;
+			move(&y, &x, d);
+			if (dists[y * W + x] < dists[i]) {
+				dirs[i] = y * W + x;
+				i = y * W + x;
+				break;
+			}
+		}
+	}
+
+	for (int i = 0; i < H * W; ++i)
+		if (dirs[i] == i)
+			dists[i] = -1;
+
+	for (;;) {
+		int z = 0;
+		for (int i = 0; i < H * W; ++i) {
+			/* Not reachable. */
+			if (dists[i] < 0)
+				continue;
+
+			for (enum direction d = 0; d < 4; ++d) {
+				int y = i / W, x = i % W;
+				move(&y, &x, d);
+				int dist = dists[i] + 1;
+				if (dist <= dists[y * W + x])
+					continue;
+
+				for (int j = i; !((j = dirs[j]) == y * W + x);)
+					if (j < 0)
+						goto ok;
+				continue;
+			ok:
+
+				z = 1;
+				dists[y * W + x] = dist;
+				dirs[y * W + x] = i;
+			}
+		}
+		if (!z)
+			break;
+	}
+
+	int m = 0;
+	int mi;
+	for (int i = 0; i < H * W; ++i)
+		if (dists[i] > m) {
+			m = dists[i];
+			mi = i;
+		}
+
+	int kz = 0;
+	while (dists[mi]) {
+		assert(dists[dirs[mi]] + 1 == dists[mi]);
+		mi = dirs[mi];
+		++kz;
+	}
+
+	fputc('\n', stdout);
+	for (int y = 0; y < H; ++y) {
+		for (int x = 0; x < W; ++x) {
+			char c = dirs[y * W + x] == y * W + x ? '.' : '?';
+			for (enum direction d = 0; d < 4; ++d) {
+				int ty = y, tx = x;
+				move(&ty, &tx, d);
+				if (dirs[y * W + x] == ty * W + tx) {
+					c = "urbl"[d];
+					c = "^>V<"[d];
+					break;
+				}
+			}
+
+#if 1
+			int i = y * W + x;
+			printf("%4d%c%c ", dists[y * W + x], c, dists[dirs[i]] > dists[i] ? '!' : ' ');
+#else
+			if (dirs[y * W + x] < 0 || y * W + x == dest)
+				printf("#");
+			else
+				printf("%c", c);
+
+#endif
+		}
+		fputc('\n', stdout);
+	}
+	fflush(stdout);
+
+	__asm__("int3");
+	for (int i = 0; i < H * W; ++i) {
+		switch (jungle[i]) {
+
+		}
+	}
+
+	snake_dir = rand() % 4;
+}
+
+static void
 run(void)
 {
 	static long const NSEC_PER_MSEC = 1000000;
@@ -594,9 +770,10 @@ run(void)
 	fd.fd = STDIN_FILENO;
 	fd.events = POLLIN;
 
+	draw();
 	struct timespec last_frame;
+	clock_gettime(CLOCK_MONOTONIC, &last_frame);
 
-	goto first_draw;
 	for (;;) {
 		enum type head = jungle[yhead * W + xhead];
 		if (T_GROUND == head)
@@ -630,9 +807,15 @@ run(void)
 			continue;
 
 		if (!rc) {
-			if (!move_world())
-				return -1;
-		first_draw:
+			if (computer)
+				steer();
+
+			if (!move_world()) {
+				yhead = -1;
+				xhead = -1;
+				return;
+			}
+
 			draw();
 			clock_gettime(CLOCK_MONOTONIC, &last_frame);
 			continue;
@@ -706,8 +889,6 @@ run(void)
 			break;
 		}
 	}
-
-	return yhead * W + xhead;
 }
 
 static void
@@ -724,7 +905,8 @@ static void enter_random_map(void);
 static void
 marathon(void)
 {
-	if (0 <= run())
+	run();
+	if (0 <= yhead)
 		enter_random_map();
 }
 
@@ -733,7 +915,7 @@ enter_map_classic(void)
 {
 	vacuum_jungle();
 	plant_snake(12, 18, LEFT);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -746,7 +928,7 @@ enter_map_around(void)
 	plant_yxv(0, W - 1, H, T_WALL);
 	plant_yxh(H - 1, 0, W, T_WALL);
 	plant_snake(H / 2, W / 2, rand() % 4);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -770,7 +952,7 @@ enter_map_corners(void)
 	plant_yxh(y, x, xn, T_WALL);
 	plant_yxh(H - 1 - y, x, xn, T_WALL);
 	plant_snake(H / 2 + rand() % 4 - 2, W / 2, rand() % 2 ? LEFT : RIGHT);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -788,7 +970,7 @@ enter_map_whirpool(void)
 	plant_yxv(0, xoff, yn, T_WALL);
 	plant_yxv(H - yn, W - 1 - xoff, yn, T_WALL);
 	plant_snake(H / 2, W / 2, rand() % 4);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -801,7 +983,7 @@ enter_map_cross(void)
 	int y = rand() % 2 ? H - 1 - H / 8 : H / 8;
 	int x = rand() % 2 ? W - 1 - W / 8 : W / 8;
 	plant_snake(y, x, rand() % 4);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -817,7 +999,7 @@ enter_map_four(void)
 		? (y < H / 2 ? UP : DOWN)
 		: (x < W / 2 ? LEFT : RIGHT);
 	plant_snake(y, x, d);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -847,7 +1029,7 @@ enter_map_slit(void)
 		x = W / 2 + (rand() % 2 ? 1 : -1);
 	}
 	plant_snake(y, x, d);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 	marathon();
 }
 
@@ -901,21 +1083,25 @@ enter_speed_menu(void)
 	plant_text(15, 1, "BACK");
 	plant_yxh(16, 1, 4, T_HOLE);
 	plant_yx(16, 0, T_WALL);
-	plant_random(T_MEAT);
+	plant_random(T_APPLE);
 
-	int rc = run();
-	if (18 == rc / W) {
+	run();
+	if (4 <= yhead && yhead < 4 + 10) {
+		speed = 9 - (yhead - 4);
+		speed -= 1 < xhead;
+	} else if (16 == yhead) {
 		return;
-	} else if (4 * W <= rc && rc < (4 + 10) * W) {
-		speed = 9 - (rc / W - 4);
-		speed -= 1 < (rc % W);
 	}
+
 	enter_speed_menu();
 }
 
 static void
 wait_user(void)
 {
+	if (computer)
+		return;
+
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
 
@@ -944,26 +1130,28 @@ wait_user(void)
 static void
 enter_maps_menu(int sel, int autoplay)
 {
-	vacuum_jungle();
-	plant_ctext(1, "MAPS");
-	plant_snake(4 + sel * 2, 2, RIGHT);
-	for (int i = 0; i < ARRAY_SIZE(MAPS); ++i)
-		plant_button(4 + i * 2, 4, MAPS[i].name);
-	plant_button(H - 2, 2, "BACK");
-	paused = !autoplay;
+	for (;;) {
+		vacuum_jungle();
+		plant_ctext(1, "MAPS");
+		plant_snake(4 + sel * 2, 2, RIGHT);
+		for (int i = 0; i < ARRAY_SIZE(MAPS); ++i)
+			plant_button(4 + i * 2, 4, MAPS[i].name);
+		plant_button(H - 2, 2, "BACK");
+		paused = !autoplay;
 
-	int rc = run();
-	if (4 * W <= rc && rc < 17 * W) {
-		sel = (rc / W - 4) / 2;
-		score = 0;
-		MAPS[sel].enter();
-		wait_user();
-	} else if (H - 2 == rc / W) {
-		enter_welcome_menu();
-		return;
+		run();
+		if (4 <= yhead && yhead < H - 2) {
+			sel = (yhead - 4) / 2;
+			score = 0;
+			MAPS[sel].enter();
+			wait_user();
+		} else if (H - 2 == yhead) {
+			enter_welcome_menu();
+			return;
+		}
+
+		autoplay = 0;
 	}
-
-	enter_maps_menu(sel, 0);
 }
 
 static void
@@ -987,66 +1175,56 @@ enter_about_menu(void)
 static void
 enter_welcome_menu(void)
 {
-	vacuum_jungle();
-	plant_ctext(1, "SNAKE");
-	if (mouse) {
-		plant_ctext(5, "SCRL UP    TURN RIGHT");
-		plant_ctext(6, "SCRL DOWN  TURN LEFT ");
-		plant_ctext(7, "SPACE      PAUSE     ");
-	} else {
-		plant_ctext(4, "H A    LEFT ");
-		plant_ctext(5, "J S    DOWN ");
-		plant_ctext(6, "K W    UP   ");
-		plant_ctext(7, "L D    RIGHT");
-		plant_ctext(8, "SPACE  PAUSE");
+	for (;;) {
+		vacuum_jungle();
+		plant_ctext(1, "SNAKE");
+		if (mouse) {
+			plant_ctext(5, "SCRL UP    TURN RIGHT");
+			plant_ctext(6, "SCRL DOWN  TURN LEFT ");
+			plant_ctext(7, "SPACE      PAUSE     ");
+		} else {
+			plant_ctext(4, "H A    LEFT ");
+			plant_ctext(5, "J S    DOWN ");
+			plant_ctext(6, "K W    UP   ");
+			plant_ctext(7, "L D    RIGHT");
+			plant_ctext(8, "SPACE  PAUSE");
+		}
+		int width = 14;
+		int x = (W - width) / 2;
+		plant_button(11, x, "PLAY");
+		plant_snake(11, W - 1 - x, LEFT);
+		plant_button(13, x + 2, "MAPS");
+		plant_button(15, x + 4, "SPEED");
+		plant_button(17, x + 6, "ABOUT");
+		plant_random(T_APPLE);
+
+		time_t now = time(NULL);
+		struct tm const *tm = localtime(&now);
+		int stars = 0;
+		if (20 <= tm->tm_hour)
+			stars = 3;
+		else if (tm->tm_hour <= 3)
+			stars = 5;
+		else if (tm->tm_hour <= 6)
+			stars = 9;
+		for (int i = 0; i < stars; ++i)
+			plant_random(T_STAR);
+
+		run();
+		if (11 == yhead) {
+			score = 0;
+			enter_random_map();
+			wait_user();
+		} else if (13 == yhead) {
+			enter_maps_menu(0, 0);
+		} else if (15 == yhead) {
+			enter_speed_menu();
+		} else if (17 == yhead) {
+			enter_about_menu();
+		} else {
+			return;
+		}
 	}
-
-	int xn = 14;
-	int x = (W - xn) / 2;
-	plant_button(11, x, "PLAY");
-	plant_snake(11, W - 1 - x, LEFT);
-	plant_button(13, x + 2, "MAPS");
-	plant_button(15, x + 4, "SPEED");
-	plant_button(17, x + 6, "ABOUT");
-
-	time_t now = time(NULL);
-	struct tm const *tm = localtime(&now);
-	int stars = 0;
-	if (20 <= tm->tm_hour)
-		stars = 3;
-	else if (tm->tm_hour <= 3)
-		stars = 5;
-	else if (tm->tm_hour <= 6)
-		stars = 9;
-	for (int i = 0; i < stars; ++i)
-		plant_random(T_STAR);
-
-	plant_random(T_MEAT);
-
-	switch (run() / W) {
-	case 11:
-		score = 0;
-		enter_random_map();
-		wait_user();
-		break;
-
-	case 13:
-		enter_maps_menu(0, 0);
-		break;
-
-	case 15:
-		enter_speed_menu();
-		break;
-
-	case 17:
-		enter_about_menu();
-		break;
-
-	default:
-		exit(EXIT_SUCCESS);
-	}
-
-	enter_welcome_menu();
 }
 
 static void
@@ -1142,10 +1320,14 @@ main(int argc, char *argv[])
 
 	int map = -1;
 
-	for (int opt; 0 < (opt = getopt(argc, argv, "hm:s:t:M"));) switch (opt) {
+	for (int opt; 0 < (opt = getopt(argc, argv, "hm:s:t:Ma"));) switch (opt) {
 	case 'h':
 		printf(USAGE);
 		return EXIT_SUCCESS;
+
+	case 'a':
+		computer = 1;
+		break;
 
 	case 'm':
 		if (!strcmp(optarg, "help")) {
