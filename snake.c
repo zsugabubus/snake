@@ -327,6 +327,13 @@ draw(void)
 }
 
 static void
+fdraw(void)
+{
+	partially_damaged = 0;
+	draw();
+}
+
+static void
 move(int *y, int *x, enum direction d)
 {
 	*y += (char)((((H - 1) <<   UP * 8) | (1 <<  DOWN * 8)) >> (d * 8));
@@ -340,7 +347,7 @@ move(int *y, int *x, enum direction d)
 static void
 plant(int pos, enum type t)
 {
-	partially_damaged &= num_damages < 20;
+	partially_damaged &= num_damages < ARRAY_SIZE(jungle_damage);
 	if (partially_damaged)
 		jungle_damage[num_damages++] = pos;
 	jungle[pos] = t;
@@ -602,94 +609,83 @@ move_world(void)
 	return move_snake() && (move_food(), 1);
 }
 
-#if 0
-static int
-cut_reachable(int const *dists, int *reached, int i, int min, int dest)
-{
-	if (reached[i])
-		return min;
-	if (i == dest)
-		return INT_MIN;
-	if (!(0 <= dists[i] && dists[i] < INT_MAX))
-		return INT_MAX;
-
-	for (enum direction d = 0; d < 4; ++d) {
-		int y = i / W, x = i % W;
-		move(&y, &x, d);
-		int t = cut_reachable(dists, y * W + x, n, dest);
-		if (t < dists[i])
-			return t;
-	}
-
-	if (min) {
-		clear_reachable()
-	}
-
-	return;
-}
-
-#endif
-
 /*
  * Pre-pass: shortest dists from head. Exclude pos ==> x WHERE x > pos AND pos != dest
  * COUNT reachable
+ *
+ * @n: Distance must be at least.
  */
 static int
-longest(int *tb, int i, int n, int dest, int parent)
+longest(int *tb, int i, int n, int dest)
 {
-	/* if (i == dest) { */
+	if (i == dest) {
 		if (n <= 0) {
-			tb[i] = parent;
-			return 1;
+			assert(!n);
+			goto found;
 		}
-		/* return 0; */
-	/* } */
+		return 0;
+	}
 
 	if (0 <= tb[i])
 		return 0;
-	tb[i] = parent;
 
 	/* dest is reachable */
-	for (int i = 0; i < H * W; ++i)
-		if (tb[i] < 0)
-			tb[i] = -100;
+	for (int j = 0; j < H * W; ++j) {
+		if (tb[j] < 0) {
+			tb[j] = -100;
+		}
+	}
+	assert(tb[dest] != -100);
+
+	int nreachable = 1;
+	int reached = 0;
 	for (int changed = 1; changed;) {
 		changed = 0;
-		for (int i = 0; i < H * W; ++i) {
-			if (!(tb[i] == parent || tb[i] == -1))
+		for (int j = 0; j < H * W; ++j) {
+			if (!(j == i || tb[j] == -1))
 				continue;
 
 			for (enum direction d = 0; d < 4; ++d) {
-				int y = i / W, x = i % W;
+				int y = j / W, x = j % W;
 				move(&y, &x, d);
 				int ii = y * W + x;
-				if (ii == dest)
-					goto reachable;
+				reached |= ii == dest;
 				if (tb[ii] == -100) {
 					tb[ii] = -1;
+					nreachable += 1;
 					changed = 1;
 				}
+				if (reached && nreachable >= n)
+					goto ok;
 			}
 		}
 	}
-	goto not;
+	return 0;
+ok:;
 
-reachable:;
+	if (n <= 0) {
+	found:;
+		tb[i] = INT_MAX;
+		return 1;
+	}
 
 	int notfood = !(T_APPLE <= jungle[i] && jungle[i] <= T_LAST_SFOOD);
 
 	for (enum direction d = 0; d < 4; ++d) {
 		int y = i / W, x = i % W;
 		move(&y, &x, d);
-		if (longest(tb, y * W + x, n - notfood, dest, i))
+		tb[i] = y * W + x;
+		if (longest(tb, y * W + x, n - notfood, dest))
 			return 1;
 	}
-
-not:
 	tb[i] = -1;
+
 	return 0;
 }
 
+int latest = 0;
+
+int stop = 0;
 /*
  * (1) Oppenent player is closer to all available cells available by us (we can get enclosed).
  *     => Go towards cell (1) farther from other player, (2) closest to us.
@@ -712,6 +708,13 @@ not:
 static void
 steer(void)
 {
+	if (jungle[20 * W + 1] == T_APPLE)
+		__asm__("int3");
+	if (stop) {
+		fdraw();
+		__asm__("int3");
+	}
+
 	int next[H * W];
 	for (int i = 0; i < H * W; ++i)
 		next[i] = -1;
@@ -750,52 +753,114 @@ steer(void)
 			break;
 	}
 
-#if 0
-		int reached[H * W];
-		memset(reached, 0xff, sizeof reached);
-		for (int i = 0; i < H * W; ++i) {
-			cut_reachable(dists, reached, yhead * W + xhead, i, tail);
-		}
 
-#endif
+	int anyfood = 0;
+	int api = -1;
+	int speci = -1;
+	for (int i = 0; i < H * W; ++i) {
+		anyfood |= T_APPLE == jungle[i];
+		if (dists[i] == INT_MAX)
+			continue;
+		if (T_APPLE == jungle[i]) {
+			api = i;
+		} else if (T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD && (speci < 0 || dists[i] < dists[speci])) {
+			speci = i;
+		}
+	}
+	if (!anyfood)
+		return;
+	int target = speci;
+	if (target < 0)
+		target = api;
+
+retarget:;
 
 	int max[H * W];
-	memset(max, -1, sizeof max);
 
-	int nn = 0;
+	enum direction oldd = snake_dir;
 	int ok = 0;
 	int tail = ytail * W + xtail;
-	int nthtail = 0;
-	for (; tail != yhead * W + xhead;) {
-		++nn;
-		assert(T_SNAKE <= jungle[tail] && jungle[tail] < T_SNAKE_END);
+	int nthtail = 1 + snake_growth;
+	for (;;) {
 		if (dists[tail] == INT_MAX)
 			goto next;
 
 		for (int i = 0; i < H * W; ++i)
-			max[i] = dists[i] == INT_MAX || jungle[i] == T_WALL || (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END) ? INT_MAX : -1;
+			max[i] = dists[i] == INT_MAX || jungle[i] == T_WALL || jungle[i] == T_HOLE || (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END) ? INT_MAX : -1;
 
-		int reachable = -1; /* -1 for HEAD */
-		for (int i = 0; i < H * W; ++i)
-			reachable += max[i] != INT_MAX;
+		int ntail = nthtail;
+		int head = yhead * W + xhead;
+		if (0 <= target) {
+			oldd = 0;
+			int i = target;
+			int oldmax = -1;
+			while (0 < dists[i] && dists[i] < INT_MAX) {
+				max[i] = oldmax;
+				for (enum direction d = 0; d < 4; ++d) {
+					int y = i / W, x = i % W;
+					move(&y, &x, (d + oldd) % 4);
+					if (dists[y * W + x] < 0 || dists[i] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
+						continue;
 
-		if (reachable < nthtail)
-			break;
-
-		if (longest(max, yhead * W + xhead, nthtail, tail, INT_MAX)) {
-			/*
-			int c = 0;
-			for (int i = max[tail]; 0 <= i && i < INT_MAX;) {
-				int ni = max[i];
-				max[i] = ++c / 8;
-				i = ni;
+					i = y * W + x;
+					oldd = (d + oldd) % 4;
+					break;
+				}
+				oldmax = i;
+				--ntail;
 			}
-			*/
+			assert(0 <= oldmax);
+			max[i] = oldmax;
+			head = target;
+			assert(max[head] == -1);
+			oldd = opposite(oldd);
+			latest = __LINE__;
+		}
+
+		if (longest(max, head, ntail, tail)) {
+			if (target < 0) {
+				int ook = 0;
+				if (max[head] != INT_MAX) {
+					for (enum direction d = 0; d < 4; ++d) {
+						int y = head / W, x = head % W;
+						move(&y, &x, d);
+						if (y * W + x == max[head]) {
+							ook = 1;
+							oldd = d;
+							latest = __LINE__;
+							break;
+						}
+					}
+				} else {
+					/* Tail is reachable using shortest path. */
+					oldd = 0;
+					int i = tail;
+					while (0 < dists[i] && dists[i] < INT_MAX) {
+						for (enum direction d = 0; d < 4; ++d) {
+							int y = i / W, x = i % W;
+							move(&y, &x, (d + oldd) % 4);
+							if (dists[y * W + x] < 0 || dists[i] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
+								continue;
+
+							max[i] = INT_MAX;
+							i = y * W + x;
+							oldd = (d + oldd) % 4;
+							break;
+						}
+					}
+					ook = 1;
+					oldd = opposite(oldd);
+					latest = __LINE__;
+				}
+				assert(ook);
+			}
 			ok = 1;
 			break;
 		}
 
 	next:;
+		if (tail == yhead * W + xhead)
+			break;
 		enum direction d = (jungle[tail] - T_SNAKE) % 4;
 		int y = tail / W, x = tail % W;
 		move(&y, &x, d);
@@ -803,8 +868,16 @@ steer(void)
 		++nthtail;
 	}
 
-	if (nthtail && !ok)
+	if (!ok) {
+		if (0 <= target) {
+			/* TODO: Try other targets. */
+			target = -1;
+			goto retarget;
+		}
 		paused = 1;
+		/* __asm__("int3"); */
+		return;
+	}
 
 #if 0
 	for (int i = 0; i < H * W; ++i) {
@@ -814,54 +887,26 @@ steer(void)
 	}
 #endif
 
-	int anyfood = 0;
-	int api = -1;
-	int speci = -1;
-	int taili = -1;
-
-	for (int i = 0; i < H * W; ++i) {
-		/* plant_random(); */
-		if (T_ALPHABET <= jungle[i] || jungle[i] == T_GROUND) {
-			/* plant_yx(i / W, i % W, 0 <= max[i] ? T_ALPHABET + (unsigned)max[i] % 26 : T_GROUND); */
-		}
-
-		if (T_APPLE == jungle[i])
-			anyfood = 1;
-		if (dists[i] == INT_MAX)
-			continue;
-		if (T_APPLE == jungle[i]) {
-			api = i;
-		} else if (T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD && (speci < 0 || dists[i] < dists[speci])) {
-			speci = i;
-		} else if (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END && (taili < 0 || dists[i] > dists[taili])) {
-			taili = i;
-		}
-	}
+	assert(next_snake_dir != opposite(snake_dir));
+	next_snake_dir = oldd;
+	return;
 
 	{
-		int i = speci;
-		if (i < 0)
-			i = api;
-		if (i < 0 && anyfood)
-			i = taili;
-		if (i < 0)
-			return;
-
-		enum direction oldd = 0;//rand() % 4;
-		while (0 < dists[i] && dists[i] < INT_MAX) {
+		enum direction oldd = 0;
+		while (0 < dists[target] && dists[target] < INT_MAX) {
 			for (enum direction d = 0; d < 4; ++d) {
-				int y = i / W, x = i % W;
+				int y = target / W, x = target % W;
 				move(&y, &x, (d + oldd) % 4);
-				if (dists[y * W + x] < 0 || dists[i] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
+				if (dists[y * W + x] < 0 || dists[target] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
 					continue;
 
-				i = y * W + x;
+				target = y * W + x;
 				oldd = (d + oldd) % 4;
 				break;
 			}
 		}
 
-		assert(dists[i] != INT_MIN && dists[i] != INT_MAX);
+		assert(dists[target] != INT_MIN && dists[target] != INT_MAX);
 
 		next_snake_dir = opposite(oldd);
 		/* __asm__("int3"); */
