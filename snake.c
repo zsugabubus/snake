@@ -32,10 +32,8 @@ static char const USAGE[] =
 #define ARRAY_SIZE(x) (int)(sizeof x / sizeof *x)
 
 enum {
-	/* W = 21,
-	H = 23, */
-	W = 5,
-	H = 6,
+	W = 21,
+	H = 23,
 };
 
 enum direction {
@@ -60,7 +58,7 @@ enum type {
 	T_ANT,
 	T_BEETLE,
 	T_PRESENT,
-	T_FIRST_SFOOD = T_APPLE,
+	T_FIRST_SFOOD = T_SNAIL,
 	T_LAST_SFOOD = T_PRESENT,
 	T_HIT,
 	T_ALPHABET,
@@ -190,6 +188,18 @@ static int const SPEED_DELAYS[] = {
 	50,
 };
 
+static int const COMPUTER_SPEED_DELAYS[] = {
+	200,
+	125,
+	100,
+	80,
+	40,
+	20,
+	10,
+	5,
+	2,
+};
+
 static char jungle[H * W];
 static enum direction snake_dir, next_snake_dir;
 static int snake_growth;
@@ -240,7 +250,7 @@ static void
 vacuum_jungle(void)
 {
 	memset(jungle, T_GROUND, sizeof jungle);
-	snake_growth = 1;
+	snake_growth = 1 + (computer ? 35 : 0);
 	mushroom_bonus = 0;
 	star_bonus = 0;
 	yfood = -1;
@@ -319,8 +329,12 @@ draw(void)
 static void
 move(int *y, int *x, enum direction d)
 {
-	*y = (*y + (char)((((H - 1) <<   UP * 8) | (1 <<  DOWN * 8)) >> (d * 8))) % H;
-	*x = (*x + (char)((((W - 1) << LEFT * 8) | (1 << RIGHT * 8)) >> (d * 8))) % W;
+	*y += (char)((((H - 1) <<   UP * 8) | (1 <<  DOWN * 8)) >> (d * 8));
+	if (H <= *y)
+		*y -= H;
+	*x += (char)((((W - 1) << LEFT * 8) | (1 << RIGHT * 8)) >> (d * 8));
+	if (W <= *x)
+		*x -= W;
 }
 
 static void
@@ -357,13 +371,14 @@ plant_random(enum type t)
 {
 	int n = 0;
 	for (int pos = 0; pos < H * W; ++pos)
-		n += T_GROUND == jungle[pos];
+		/* Tmp hack alphabet. */
+		n += T_GROUND == jungle[pos] || T_ALPHABET <= jungle[pos];
 	if (!n)
 		return -1;
 	n = rand() % n;
 
 	for (int pos = 0;; ++pos) {
-		if (T_GROUND == jungle[pos] && !n--) {
+		if ((T_GROUND == jungle[pos] || T_ALPHABET <= jungle[pos]) && !n--) {
 			plant(pos, t);
 			return pos;
 		}
@@ -527,6 +542,7 @@ move_snake(void)
 
 		case T_GROUND:
 		case T_ALPHABET:
+		default:
 			/* Ok. Move along. */
 			break;
 
@@ -617,7 +633,7 @@ steer(void)
 		dists[i] = INT_MAX;
 
 	for (int i = 0; i < H * W; ++i)
-		if (T_WALL == jungle[i])
+		if (T_WALL == jungle[i] || T_HOLE  == jungle[i])
 			dists[i] = INT_MIN;
 
 	dists[yhead * W + xhead] = 0;
@@ -629,7 +645,7 @@ steer(void)
 			if (dists[y * W + x] <= dist)
 				continue;
 
-			if (!(T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END)) {
+			if (!(T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END)) {
 				if (next[y * W + x] < 0) {
 					next[y * W + x] = next[i];
 					next[i] = y * W + x;
@@ -646,20 +662,24 @@ steer(void)
 			break;
 	}
 
+#if 1
+	int dists2[H * W];
+	memcpy(dists2, dists, sizeof dists2);
+
 	int dirs[H * W];
 	for (int i = 0; i < W * H; ++i)
 		dirs[i] = i;
 
-	int dest = 0 * W + 3;
+	int dest = 0 * W + 2;
 	for (int i = dest;;) {
-		if (!dists[i]) {
+		if (!dists2[i]) {
 			dirs[i] = -1;
 			break;
 		}
 		for (enum direction d = 0; d < 4; ++d) {
 			int y = i / W, x = i % W;
 			move(&y, &x, d);
-			if (dists[y * W + x] < dists[i]) {
+			if (dists2[y * W + x] < dists2[i]) {
 				dirs[i] = y * W + x;
 				i = y * W + x;
 				break;
@@ -670,20 +690,20 @@ steer(void)
 #if 1
 	for (int i = 0; i < H * W; ++i)
 		if (dirs[i] == i)
-			dists[i] = -1;
+			dists2[i] = -1;
 
 	for (int iter = 0;; ++iter) {
 		int z = 0;
 		for (int i = 0; i < H * W; ++i) {
 			/* Not reachable. */
-			if (dists[i] < 0)
+			if (dists2[i] < 0)
 				continue;
 
 			for (enum direction d = 0; d < 4; ++d) {
 				int y = i / W, x = i % W;
 				move(&y, &x, d);
-				int dist = dists[i] + 1;
-				if (dist <= dists[y * W + x])
+				int dist = dists2[i] + 1;
+				if (dist <= dists2[y * W + x])
 					continue;
 
 				/* Nothing can dependent on dest. It is the final step. */
@@ -697,7 +717,7 @@ steer(void)
 			ok:
 
 				z = 1;
-				dists[y * W + x] = dist;
+				dists2[y * W + x] = dist;
 				dirs[y * W + x] = i;
 			}
 		}
@@ -724,7 +744,7 @@ steer(void)
 
 #if 1
 			int i = y * W + x;
-			printf("%4d%c%c ", dists[y * W + x], c, dists[dirs[i]] > dists[i] ? '!' : ' ');
+			printf("%4d%c%c ", dists2[y * W + x], c, dists2[dirs[i]] > dists2[i] ? '!' : ' ');
 #else
 			if (dirs[y * W + x] < 0 || y * W + x == dest)
 				printf("#");
@@ -736,9 +756,10 @@ steer(void)
 		fputc('\n', stdout);
 	}
 	fflush(stdout);
+#endif
 
 
-#if 1
+#if 0
 	for (int iter = 0;; ++iter) {
 		int z = 0;
 		for (int i = 0; i < H * W; ++i) {
@@ -793,14 +814,59 @@ steer(void)
 	}
 #endif
 
-	exit(1);
-	for (int i = 0; i < H * W; ++i) {
-		switch (jungle[i]) {
+	int anyfood = 0;
+	int api = -1;
+	int speci = -1;
+	int taili = -1;
 
+	for (int i = 0; i < H * W; ++i) {
+		/* plant_random(); */
+		if (T_ALPHABET <= jungle[i] || jungle[i] == T_GROUND) {
+			plant_yx(i / W, i % W, T_ALPHABET + dists2[i] % 26);
+		}
+
+		if (T_APPLE == jungle[i])
+			anyfood = 1;
+		if (dists[i] == INT_MAX)
+			continue;
+		if (T_APPLE == jungle[i]) {
+			api = i;
+		} else if (T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD && (speci < 0 || dists[i] < dists[speci])) {
+			speci = i;
+		} else if (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END && (taili < 0 || dists[i] > dists[taili])) {
+			taili = i;
 		}
 	}
 
-	snake_dir = rand() % 4;
+	{
+		int i = speci;
+		if (i < 0)
+			i = api;
+		if (i < 0 && anyfood)
+			i = taili;
+		if (i < 0)
+			return;
+
+		enum direction oldd = 0;//rand() % 4;
+		while (0 < dists[i] && dists[i] < INT_MAX) {
+			for (enum direction d = 0; d < 4; ++d) {
+				int y = i / W, x = i % W;
+				move(&y, &x, (d + oldd) % 4);
+				if (dists[y * W + x] < 0 || dists[i] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
+					continue;
+
+				i = y * W + x;
+				oldd = (d + oldd) % 4;
+				break;
+			}
+		}
+
+		assert(dists[i] != INT_MIN && dists[i] != INT_MAX);
+
+		next_snake_dir = opposite(oldd);
+		/* __asm__("int3"); */
+		return;
+	}
 }
 
 static void
@@ -825,7 +891,7 @@ run(void)
 		if (T_GROUND == head)
 			break;
 		int in_hole = T_HOLE == head;
-		int frame_duration = SPEED_DELAYS[speed - 1] >> in_hole;
+		int frame_duration = (computer ? COMPUTER_SPEED_DELAYS : SPEED_DELAYS)[speed - 1] >> in_hole;
 
 		struct timespec next_frame;
 		next_frame.tv_sec = last_frame.tv_sec;
@@ -1145,9 +1211,6 @@ enter_speed_menu(void)
 static void
 wait_user(void)
 {
-	if (computer)
-		return;
-
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
 
@@ -1221,12 +1284,14 @@ enter_about_menu(void)
 static void
 enter_welcome_menu(void)
 {
+#if 0
 	vacuum_jungle();
 	plant_snake(0, 4, LEFT);
 	plant_yxv(1, 2, 4, T_WALL);
 	plant_yxv(1, 4, 4, T_WALL);
 	run();
 	exit(2);
+#endif
 
 	for (;;) {
 		vacuum_jungle();
