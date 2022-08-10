@@ -620,7 +620,7 @@ longest(int *tb, int i, int n, int dest, int rnd)
 {
 	if (i == dest) {
 		if (n <= 0) {
-			assert(!n);
+			/* assert(!n); */
 			goto found;
 		}
 		return 0;
@@ -777,7 +777,7 @@ steer(void)
 		dists[i] = INT_MAX;
 
 	for (int i = 0; i < H * W; ++i)
-		if (T_WALL == jungle[i] || T_HOLE  == jungle[i])
+		if (T_WALL == jungle[i])
 			dists[i] = INT_MIN;
 
 	dists[yhead * W + xhead] = 0;
@@ -816,7 +816,7 @@ steer(void)
 			continue;
 		if (T_APPLE == jungle[i]) {
 			api = i;
-		} else if (T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD && (speci < 0 || dists[i] < dists[speci])) {
+		} else if (((T_FIRST_SFOOD <= jungle[i] && jungle[i] <= T_LAST_SFOOD) || jungle[i] == T_HOLE) && (speci < 0 || dists[i] < dists[speci])) {
 			speci = i;
 		}
 	}
@@ -839,7 +839,7 @@ retarget:;
 			goto next;
 
 		for (int i = 0; i < H * W; ++i)
-			max[i] = dists[i] == INT_MAX || jungle[i] == T_WALL || jungle[i] == T_HOLE || (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END) ? INT_MAX : -1;
+			max[i] = dists[i] == INT_MAX || jungle[i] == T_WALL || (T_SNAKE <= jungle[i] && jungle[i] < T_SNAKE_END) ? INT_MAX : -1;
 
 		int ntail = nthtail;
 		int head = yhead * W + xhead;
@@ -862,7 +862,7 @@ retarget:;
 				oldmax = i;
 				--ntail;
 			}
-			assert(0 <= oldmax);
+			/* assert(0 <= oldmax); */
 			max[i] = oldmax;
 			head = target;
 			assert(max[head] == -1);
