@@ -15,7 +15,7 @@
 static char const USAGE[] =
 "Usage: snake [OPTION]\n"
 "\n"
-"  -s SPEED      set snake speed (default: 6)\n"
+"  -s SPEED      set snake speed\n"
 "  -t THEME      set display theme\n"
 "  -m NAME       start playing on map\n"
 "  -M            mouse mode\n"
@@ -1489,12 +1489,14 @@ print_s_help(FILE *stream)
 {
 	fprintf(stream, "Available speed levels:\n");
 	for (int i = 1; i <= 9; ++i) {
-		char const *s = "";
+		char const *s0 = "", *s1 = "";
 		if (1 == i)
-			s = " (slowest)";
+			s0 = " (slowest)";
 		else if (9 == i)
-			s = " (fastest)";
-		fprintf(stream, "  %-6d%3d ms%s\n", i, SPEED_DELAYS[i - 1], s);
+			s0 = " (fastest)";
+		if (speed == i)
+			s1 = " (current)";
+		fprintf(stream, "  %-6d%3d ms%s%s\n", i, SPEED_DELAYS[i - 1], s0, s1);
 	}
 }
 
@@ -1556,12 +1558,15 @@ main(int argc, char *argv[])
 			print_s_help(stdout);
 			return EXIT_SUCCESS;
 		}
-		speed = atoi(optarg);
-		if (!(1 <= speed && speed <= 9)) {
+	{
+		int n =  atoi(optarg);
+		if (!(1 <= n && n <= 9)) {
 			fprintf(stderr, USAGE);
 			print_s_help(stderr);
 			return EXIT_FAILURE;
 		}
+		speed = n;
+	}
 		break;
 
 	case 't':
