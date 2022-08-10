@@ -15,6 +15,7 @@
 static char const USAGE[] =
 "Usage: snake [OPTION]\n"
 "\n"
+"  -a            ai not intelligent\n"
 "  -s SPEED      set snake speed\n"
 "  -t THEME      set display theme\n"
 "  -m NAME       start playing on map\n"
@@ -1525,11 +1526,7 @@ main(int argc, char *argv[])
 
 	int map = -1;
 
-	for (int opt; 0 < (opt = getopt(argc, argv, "hm:s:t:Ma"));) switch (opt) {
-	case 'h':
-		printf(USAGE);
-		return EXIT_SUCCESS;
-
+	for (int opt; 0 < (opt = getopt(argc, argv, "am:Ms:t:h"));) switch (opt) {
 	case 'a':
 		computer = 1;
 		break;
@@ -1586,6 +1583,10 @@ main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 		break;
+
+	case 'h':
+		printf(USAGE);
+		return EXIT_SUCCESS;
 
 	case '?':
 		fprintf(stderr, USAGE);
