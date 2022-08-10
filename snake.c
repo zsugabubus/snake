@@ -870,6 +870,7 @@ retarget:;
 			latest = __LINE__;
 		}
 
+		/* FIXME: If guessing for too long prefer catching tail instead of shortest path to food. */
 		if (longest(max, head, ntail, tail, !ntail)) {
 			if (target < 0) {
 				int ook = 0;
