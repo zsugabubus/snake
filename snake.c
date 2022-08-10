@@ -616,7 +616,7 @@ move_world(void)
  * @n: Distance must be at least.
  */
 static int
-longest(int *tb, int i, int n, int dest)
+longest(int *tb, int i, int n, int dest, int rnd)
 {
 	if (i == dest) {
 		if (n <= 0) {
@@ -637,6 +637,7 @@ longest(int *tb, int i, int n, int dest)
 	}
 	assert(tb[dest] != -100);
 
+#if 0
 	int nreachable = 1;
 	int reached = 0;
 	for (int changed = 1; changed;) {
@@ -660,6 +661,29 @@ longest(int *tb, int i, int n, int dest)
 			}
 		}
 	}
+#else
+	int reached = 0;
+	int nreachable = 0;
+	int stack[H * W];
+	stack[nreachable++] = i;
+	int nreached = 0;
+	while (nreached < nreachable) {
+		int j = stack[nreached++];
+		for (enum direction d = 0; d < 4; ++d) {
+			int y = j / W, x = j % W;
+			move(&y, &x, d);
+			int ii = y * W + x;
+			reached |= ii == dest;
+			if (tb[ii] == -100) {
+				tb[ii] = -1;
+				stack[nreachable++] = ii;
+			}
+			if (reached && nreachable >= n)
+				goto ok;
+		}
+	}
+#endif
+
 	return 0;
 ok:;
 
@@ -671,17 +695,47 @@ ok:;
 
 	int notfood = !(T_APPLE <= jungle[i] && jungle[i] <= T_LAST_SFOOD);
 
+#if 0
+#define C(d0, d1, sum) int sum; do { \
+	int y = i / W, x = i % W; \
+	move(&y, &x, d0); \
+	if (0 <= d1) \
+		move(&y, &x, d1); \
+	int has = 0 <= tb[y * W + x]; \
+	sum = has; \
+} while (0) \
+
+	C(UP, LEFT, topl);
+	C(UP, -1, top);
+	C(UP, RIGHT, topr);
+
+	C(LEFT, -1, lef);
+	C(RIGHT, -1, rig);
+
+	C(DOWN, LEFT, botl);
+	C(DOWN, -1, bot);
+	C(DOWN, RIGHT, botr);
+
+	enum direction off = top + lef + rig + bot <= 1 ? rand() : topl + top + lef > top + topr + rig ? LEFT : UP; // rand();
+#endif
+	enum direction off = n <= 2 /*|| rnd */? rand() : 0;
+#if 0
+	i; /*n <= 1 ? */ rand() /* When table is almost full head follows tail. */ /*: (i, 0)*/;
+#endif
 	for (enum direction d = 0; d < 4; ++d) {
 		int y = i / W, x = i % W;
-		move(&y, &x, d);
+		move(&y, &x, (d + off) % 4);
 		tb[i] = y * W + x;
-		if (longest(tb, y * W + x, n - notfood, dest))
+		if (longest(tb, y * W + x, n - notfood, dest, rnd))
 			return 1;
 	}
 	tb[i] = -1;
 
 	return 0;
 }
+
+char stepstack[H * W];
+int nstepstack = 0;
 
 int latest = 0;
 
@@ -708,11 +762,10 @@ int stop = 0;
 static void
 steer(void)
 {
-	if (jungle[20 * W + 1] == T_APPLE)
-		__asm__("int3");
-	if (stop) {
-		fdraw();
-		__asm__("int3");
+	if (nstepstack) {
+		next_snake_dir = stepstack[0];
+		memmove(stepstack, stepstack + 1, --nstepstack);
+		return;
 	}
 
 	int next[H * W];
@@ -817,7 +870,7 @@ retarget:;
 			latest = __LINE__;
 		}
 
-		if (longest(max, head, ntail, tail)) {
+		if (longest(max, head, ntail, tail, !ntail)) {
 			if (target < 0) {
 				int ook = 0;
 				if (max[head] != INT_MAX) {
@@ -831,6 +884,20 @@ retarget:;
 							break;
 						}
 					}
+
+#if 0
+					for (int z = max[head]; z != INT_MAX; z = max[z]) {
+						for (enum direction d = 0; d < 4; ++d) {
+							int y = z / W, x = z % W;
+							move(&y, &x, d);
+							if (y * W + x == max[z]) {
+								stepstack[nstepstack++] = d;
+								break;
+							}
+						}
+					}
+#endif
+
 				} else {
 					/* Tail is reachable using shortest path. */
 					oldd = 0;
