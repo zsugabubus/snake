@@ -1467,7 +1467,7 @@ prepare_term(void)
 	/* Hide cursor (DECTCEM). */
 	fputs("\033[?25l", stdout);
 	/* Use alt screen. */
-	/* fputs("\033[?1049h", stdout); */
+	fputs("\033[?1049h", stdout);
 	fflush(stdout);
 }
 
@@ -1514,12 +1514,11 @@ print_t_help(FILE *stream)
 int
 main(int argc, char *argv[])
 {
-	/* srand(time(NULL)); */
-	srand(200);
+	srand(time(NULL));
 	setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
 	sigset_t sigmask;
 	sigfillset(&sigmask);
-	/* pthread_sigmask(SIG_SETMASK, &sigmask, NULL); */
+	pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
 	signal(SIGINT, handle_interrupt);
 	signal(SIGTERM, handle_interrupt);
 	signal(SIGQUIT, handle_interrupt);
