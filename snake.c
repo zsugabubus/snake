@@ -1009,7 +1009,12 @@ run(void)
 			}
 
 			draw();
-			clock_gettime(CLOCK_MONOTONIC, &last_frame);
+			if (timeout.tv_sec || timeout.tv_nsec)
+				/* next_frame + frame_duration (likely) points to the future. */
+				last_frame = next_frame;
+			else
+				/* next_frame + frame_duration < now, catch up. */
+				clock_gettime(CLOCK_MONOTONIC, &last_frame);
 			continue;
 		}
 
