@@ -190,13 +190,13 @@ static int const SPEED_DELAYS[] = {
 
 static int const COMPUTER_SPEED_DELAYS[] = {
 	200,
+	145,
 	125,
 	100,
 	80,
-	40,
-	20,
+	50,
+	25,
 	10,
-	5,
 	2,
 };
 
@@ -250,7 +250,7 @@ static void
 vacuum_jungle(void)
 {
 	memset(jungle, T_GROUND, sizeof jungle);
-	snake_growth = 1 + (computer ? 35 : 0);
+	snake_growth = 1;
 	mushroom_bonus = 0;
 	star_bonus = 0;
 	yfood = -1;
@@ -943,19 +943,9 @@ retarget:;
 			goto retarget;
 		}
 		paused = 1;
-		/* __asm__("int3"); */
 		return;
 	}
 
-#if 0
-	for (int i = 0; i < H * W; ++i) {
-		int t = (tail / W == i / W ? 1 : 0) + (tail % W == i % W ? 2 : 0);
-		if (t)
-			max[i] = t;
-	}
-#endif
-
-	assert(next_snake_dir != opposite(snake_dir));
 	next_snake_dir = oldd;
 }
 
