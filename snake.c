@@ -1487,7 +1487,7 @@ print_m_help(FILE *stream)
 static void
 print_s_help(FILE *stream)
 {
-	fprintf(stream, "Available speed levels:\n");
+	fprintf(stream, "Available speed levels (human/computer):\n");
 	for (int i = 1; i <= 9; ++i) {
 		char const *s0 = "", *s1 = "";
 		if (1 == i)
@@ -1496,7 +1496,7 @@ print_s_help(FILE *stream)
 			s0 = " (fastest)";
 		if (speed == i)
 			s1 = " (current)";
-		fprintf(stream, "  %-6d%3d ms%s%s\n", i, SPEED_DELAYS[i - 1], s0, s1);
+		fprintf(stream, "  %-6d%3d/%3d ms%s%s\n", i, SPEED_DELAYS[i - 1], COMPUTER_SPEED_DELAYS[i - 1], s0, s1);
 	}
 }
 
