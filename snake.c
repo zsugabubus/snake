@@ -956,29 +956,6 @@ retarget:;
 
 	assert(next_snake_dir != opposite(snake_dir));
 	next_snake_dir = oldd;
-	return;
-
-	{
-		enum direction oldd = 0;
-		while (0 < dists[target] && dists[target] < INT_MAX) {
-			for (enum direction d = 0; d < 4; ++d) {
-				int y = target / W, x = target % W;
-				move(&y, &x, (d + oldd) % 4);
-				if (dists[y * W + x] < 0 || dists[target] <= dists[y * W + x] || (T_SNAKE <= jungle[y * W + x] && jungle[y * W + x] < T_SNAKE_END))
-					continue;
-
-				target = y * W + x;
-				oldd = (d + oldd) % 4;
-				break;
-			}
-		}
-
-		assert(dists[target] != INT_MIN && dists[target] != INT_MAX);
-
-		next_snake_dir = opposite(oldd);
-		/* __asm__("int3"); */
-		return;
-	}
 }
 
 static void
