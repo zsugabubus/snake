@@ -759,10 +759,13 @@ int stop = 0;
  *     => Step towards longest path form our current point to -i-th tail
  *        reachable by one of the shortest path.
  *        => REPEAT with i - 1.
+ *
+ * TODO: Multiplayer support (one player asdf, other uses arrows)
  */
 static void
 steer(void)
 {
+	/* TODO: Store computed next steps to improve performance. */
 	if (nstepstack) {
 		next_snake_dir = stepstack[0];
 		memmove(stepstack, stepstack + 1, --nstepstack);
@@ -780,6 +783,17 @@ steer(void)
 	for (int i = 0; i < H * W; ++i)
 		if (T_WALL == jungle[i])
 			dists[i] = INT_MIN;
+
+	/* TODO: Handle moving foods properly. */
+	/* FIXME: Fix infinite chasing of moving foods (without timeout). */
+	/* TODO: Maybe exclude apple from shortest path if there are other
+	 * foods. */
+	/* FIXME: Remove srand(), remove `snake_groth += 1`s.
+	 * -mSLIT at 988 points hits wall because snake cannot catch its tail:
+	 * the snake has length of 2 but the algorithm sees it has the length
+	 * of 15+ with its tail being completely separated (thanks to shortest
+	 * path) on the other side. To fix this when computing shortest path,
+	 * the tail of the snake have to be moved length-steps forward. */
 
 	dists[yhead * W + xhead] = 0;
 	for (int i = yhead * W + xhead;;) {
@@ -871,7 +885,8 @@ retarget:;
 			latest = __LINE__;
 		}
 
-		/* FIXME: If guessing for too long prefer catching tail instead of shortest path to food. */
+		/* FIXME: If guessing takes too long, prefer catching tail
+		 * instead of shortest path to food. (Maybe bullshit.) */
 		if (longest(max, head, ntail, tail, !ntail)) {
 			if (target < 0) {
 				int ook = 0;
