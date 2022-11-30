@@ -1246,7 +1246,10 @@ enter_map_slit(void)
 	marathon();
 }
 
+static void enter_random_map(void);
+
 static struct map const MAPS[] = {
+	{ "RANDOM", enter_random_map },
 	{ "CLASSIC", enter_map_classic },
 	{ "AROUND", enter_map_around },
 	{ "CORNERS", enter_map_corners },
