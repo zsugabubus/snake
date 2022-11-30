@@ -395,19 +395,19 @@ plant_random(enum type t)
 }
 
 static void
-plant_text(int y, int x, char const *str)
+plant_text(int y, int x, char const *s)
 {
-	for (; *str; ++str) {
-		enum type t = ' ' == *str ? T_GROUND : T_ALPHABET + (*str - 'A');
+	for (; *s; ++s) {
+		enum type t = *s == ' ' ? T_GROUND : T_ALPHABET + (*s - 'A');
 		plant_yx(y, x, t);
 		move(&y, &x, RIGHT);
 	}
 }
 
 static void
-plant_ctext(int y, char const *str)
+plant_ctext(int y, char const *s)
 {
-	plant_text(y, (W - strlen(str)) / 2, str);
+	plant_text(y, (W - strlen(s)) / 2, s);
 }
 
 static int
@@ -462,7 +462,7 @@ plant_food(void)
 }
 
 static void
-plant_foodn(int i)
+plant_nfood(int i)
 {
 	for (; 0 < i; --i)
 		plant_food();
@@ -571,7 +571,7 @@ move_snake(void)
 			/* Otherwise player would not be motivated to
 			 * pick up foods immediately. */
 			if (!any_special_food())
-				plant_foodn(rand() % 4);
+				plant_nfood(rand() % 4);
 			break;
 
 		case T_SNAIL:
@@ -583,7 +583,7 @@ move_snake(void)
 			break;
 
 		case T_PRESENT:
-			plant_foodn(2 + rand() % 4);
+			plant_nfood(2 + rand() % 4);
 			break;
 
 		case T_STAR:
