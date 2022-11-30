@@ -248,7 +248,7 @@ draw_cell(int pos)
 }
 
 static void
-vacuum_jungle(void)
+fire(void)
 {
 	memset(jungle, T_GROUND, sizeof jungle);
 	snake_growth = 1;
@@ -274,12 +274,12 @@ draw_jungle(void)
 			for (int x = 0; x < W; ++x) {
 				draw_cell(y * W + x);
 			}
-			fputs(UNICODE_ARTS == ARTS ? "\033[m│\n" : "\033[m|\n", stdout);
+			fputs(ARTS == UNICODE_ARTS ? "\033[m│\n" : "\033[m|\n", stdout);
 		}
 		fputs("\033[m", stdout);
 		for (int x = 0; x < W; ++x)
-			fputs(UNICODE_ARTS == ARTS ? "──" : "--", stdout);
-		fputs(UNICODE_ARTS == ARTS ? "┘\n\033[m" : "\n\033[m", stdout);
+			fputs(ARTS == UNICODE_ARTS ? "──" : "--", stdout);
+		fputs(ARTS == UNICODE_ARTS ? "┘\n\033[m" : "\n\033[m", stdout);
 	}
 	num_damages = 0;
 }
@@ -291,7 +291,7 @@ draw_number(int n, int m)
 		int digit = n / m;
 		n %= m;
 
-		if (UNICODE_ARTS == ARTS)
+		if (ARTS == UNICODE_ARTS)
 			/* Unicode SEGMENTED DIGIT ZERO */
 			printf("\xf0\x9f\xaf%c ", 0xb0 + digit);
 		else
@@ -460,9 +460,9 @@ plant_food(void)
 }
 
 static void
-plant_nfood(int i)
+plant_nfood(int n)
 {
-	for (; 0 < i; --i)
+	for (int i = 0; i < n; ++i)
 		plant_food();
 }
 
@@ -780,7 +780,7 @@ int stop = 0;
  * TODO: Multiplayer support (one player asdf, other uses arrows)
  */
 static void
-steer(void)
+old_steer(void)
 {
 	/* TODO: Store computed next steps to improve performance. */
 	if (nstepstack) {
@@ -981,6 +981,11 @@ retarget:;
 
 	next_snake_dir = oldd;
 }
+static void
+steer(void)
+{
+	old_steer();
+}
 
 static void
 run(void)
@@ -1143,7 +1148,7 @@ marathon(void)
 static void
 enter_map_classic(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_snake(12, 18, LEFT);
 	plant_random(T_APPLE);
 	marathon();
@@ -1152,7 +1157,7 @@ enter_map_classic(void)
 static void
 enter_map_around(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_yxh(0, 0, W, T_WALL);
 	plant_yxv(0, 0, H, T_WALL);
 	plant_yxv(0, W - 1, H, T_WALL);
@@ -1167,7 +1172,7 @@ enter_map_corners(void)
 {
 	int Py = 7;
 
-	vacuum_jungle();
+	fire();
 	/* Going clockwise starting from top left corner. */
 	plant_yxv(0, 0, 3, T_WALL);
 	plant_yx(0, 1, T_WALL);
@@ -1192,7 +1197,7 @@ enter_map_whirpool(void)
 	int Pc = 1;
 	int Px = 3;
 
-	vacuum_jungle();
+	fire();
 	int yn = (H - Pc) / 2, xn = (W - Pc) / 2;
 	int yoff = yn - Px - 1, xoff = xn + Px + 1;
 	plant_yxh(yoff, 0, xn, T_WALL);
@@ -1207,7 +1212,7 @@ enter_map_whirpool(void)
 static void
 enter_map_cross(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_yxh(H / 2, W / 2 - W / 4, W / 2 | 1, T_WALL);
 	plant_yxv(H / 2 - H / 4, W / 2, H / 2 | 1, T_WALL);
 	int y = rand() % 2 ? H - 1 - H / 8 : H / 8;
@@ -1220,7 +1225,7 @@ enter_map_cross(void)
 static void
 enter_map_four(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_yxh(H / 2, 0, W, T_WALL);
 	plant_yxv(0, W / 2, H, T_WALL);
 	int y = H / 4 + (rand() % 2 ? H / 2 : 0);
@@ -1236,7 +1241,7 @@ enter_map_four(void)
 static void
 enter_map_slit(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_yxh(0, 0, W, T_WALL);
 	plant_yxv(0, 0, H, T_WALL);
 	plant_yxv(0, W - 1, H, T_WALL);
@@ -1295,7 +1300,7 @@ enter_welcome_menu(void);
 static void
 enter_speed_menu(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_ctext(1, "SPEED");
 	plant_text(3, 0, "SET");
 	plant_text(3, W - 6, "SLOWER");
@@ -1332,8 +1337,8 @@ enter_speed_menu(void)
 static void
 wait_user(void)
 {
-	sigset_t sigmask;
-	sigemptyset(&sigmask);
+	sigset_t unblock_all;
+	sigemptyset(&unblock_all);
 
 	struct pollfd fd;
 	fd.fd = STDIN_FILENO;
@@ -1342,11 +1347,11 @@ wait_user(void)
 	draw();
 
 	for (;;) {
-		int rc = ppoll(&fd, 1, NULL, &sigmask);
+		int rc = ppoll(&fd, 1, NULL, &unblock_all);
 		if (rc < 0)
 			continue;
 
-		if (~POLLIN & fd.revents)
+		if (fd.revents & ~POLLIN)
 			exit(EXIT_FAILURE);
 
 		char key;
@@ -1361,7 +1366,7 @@ static void
 enter_maps_menu(int sel, int autoplay)
 {
 	for (;;) {
-		vacuum_jungle();
+		fire();
 		plant_ctext(1, "MAPS");
 		plant_snake(4 + sel * 2, 2, RIGHT);
 		for (int i = 0; i < ARRAY_SIZE(MAPS); ++i)
@@ -1387,7 +1392,7 @@ enter_maps_menu(int sel, int autoplay)
 static void
 enter_about_menu(void)
 {
-	vacuum_jungle();
+	fire();
 	plant_ctext(1, "ABOUT");
 	plant_ctext(4, "WRITTEN BY");
 	plant_button(5, 4, "ZSUGABUBUS");
@@ -1405,17 +1410,10 @@ enter_about_menu(void)
 static void
 enter_welcome_menu(void)
 {
-#if 0
-	vacuum_jungle();
-	plant_snake(0, 4, LEFT);
-	plant_yxv(1, 2, 4, T_WALL);
-	plant_yxv(1, 4, 4, T_WALL);
-	run();
-	exit(2);
-#endif
+	enter_map_slit();
 
 	for (;;) {
-		vacuum_jungle();
+		fire();
 		plant_ctext(1, "SNAKE");
 		if (mouse) {
 			plant_ctext(5, "SCRL UP    TURN RIGHT");
@@ -1532,7 +1530,8 @@ print_s_help(FILE *stream)
 			s0 = " (fastest)";
 		if (speed == i)
 			s1 = " (current)";
-		fprintf(stream, "  %-6d%3d/%3d ms%s%s\n", i, SPEED_DELAYS[i - 1], COMPUTER_SPEED_DELAYS[i - 1], s0, s1);
+		fprintf(stream, "  %-6d%3d/%3d ms%s%s\n",
+				i, SPEED_DELAYS[i - 1], COMPUTER_SPEED_DELAYS[i - 1], s0, s1);
 	}
 }
 
@@ -1550,9 +1549,9 @@ main(int argc, char *argv[])
 {
 	srand(time(NULL));
 	setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
-	sigset_t sigmask;
-	sigfillset(&sigmask);
-	pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
+	sigset_t block_all;
+	sigfillset(&block_all);
+	pthread_sigmask(SIG_SETMASK, &block_all, NULL);
 	signal(SIGINT, handle_interrupt);
 	signal(SIGTERM, handle_interrupt);
 	signal(SIGQUIT, handle_interrupt);
