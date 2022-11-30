@@ -439,6 +439,8 @@ plant_food(void)
 		int pos = plant_random(t);
 		if (pos < 0)
 			return;
+		/* WTF: move_food() once crashed with yfood == 0xffFFff. */
+		assert(pos < H * W);
 		yfood = pos / W;
 		xfood = pos % W;
 		food_dir = T_SNAIL == t
@@ -679,9 +681,9 @@ longest(int *tb, int i, int n, int dest, int rnd)
 				tb[ii] = -1;
 				stack[nreachable++] = ii;
 			}
-			if (reached && nreachable >= n)
-				goto ok;
 		}
+		if (reached && nreachable >= n)
+			goto ok;
 	}
 #endif
 
@@ -739,6 +741,23 @@ char stepstack[H * W];
 int nstepstack = 0;
 
 int latest = 0;
+
+/* NEW ALGORITHM:
+ *
+ * (A) Find food (bug > food > apple > tail).
+ * - Compute short cycle head to tail.
+ * (B) Shortest path from head->food first.
+ * - Longest path: shortest path from food->everywhere, move head to more distant dir, on eq choose fewer neightbors, less (away from) (maybe?) snakes.
+ * (C) Shortest path from food->(last reachable)tail. (Compute it after, since bc timeo head->food enjoys prio).
+ * ! Simulate moving bug. (It can hit as hard if we do otherwise. (maybe moves between head and tail))
+ * - (C) fails: Backtrack (B), retry (C). (B) maybe shortest but takes different route.
+ * - fails: we are fucked.
+ * - success and long enough: step on (B). (save route and next time check if every cell is empty, so we can reuse previously computed path)
+ * - success but too short:
+ *
+ * - 
+ * + Longest path from food->last.
+ */
 
 int stop = 0;
 /*
