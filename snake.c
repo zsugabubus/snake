@@ -439,8 +439,6 @@ plant_food(void)
 		int pos = plant_random(t);
 		if (pos < 0)
 			return;
-		/* WTF: move_food() once crashed with yfood == 0xffFFff. */
-		assert(pos < H * W);
 		yfood = pos / W;
 		xfood = pos % W;
 		food_dir = T_SNAIL == t
@@ -471,20 +469,18 @@ plant_nfood(int i)
 static void
 move_food(void)
 {
+	if (yfood < 0)
+		return;
+
 	if (0 < food_timeout && !--food_timeout) {
 		plant_yx(yfood, xfood, T_GROUND);
-		return;
-	}
-
-	if (yfood < 0) {
-		food_timeout = 0;
 		return;
 	}
 
 	int y = yfood, x = xfood;
 	move(&y, &x, food_dir);
 	enum type t = jungle[y * W + x];
-	if (T_GROUND != t && !(T_HEAD <= t && t < T_HEAD + 4))
+	if (t != T_GROUND && !(T_HEAD <= t && t < T_HEAD + 4))
 		food_dir = opposite(food_dir);
 
 	y = yfood, x = xfood;
@@ -534,9 +530,11 @@ move_snake(void)
 		int prev_pos = yhead * W + xhead;
 		move(&yhead, &xhead, snake_dir);
 		int new_pos = yhead * W + xhead;
-		int bug = new_pos == yfood * W + xfood;
-		if (bug)
+		int bug = yhead == yfood && xhead == xfood;
+		if (bug) {
 			yfood = -1;
+			food_timeout = 0;
+		}
 		enum type new = jungle[new_pos];
 	again:
 		if (new == T_WALL || (T_HEAD <= new && new < T_SNAKE_END)) {
